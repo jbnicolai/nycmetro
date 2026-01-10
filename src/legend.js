@@ -20,7 +20,11 @@ export function createLegend(map, layers, fetchCitibikeFn) {
                     <label class="legend-item"><input type="checkbox" id="cb-yellow"> <span class="color-swatch" style="background:#fbbf24"></span> Low/Classic</label>
                     <label class="legend-item"><input type="checkbox" id="cb-red"> <span class="color-swatch" style="background:#ef4444"></span> Empty</label>
                 </div>
-                <div class="legend-section"><div class="legend-title">Subway Lines</div><div id="subway-toggles"></div></div>
+                <div class="legend-section">
+                    <div class="legend-title">Subway Options</div>
+                    <label class="legend-item"><input type="checkbox" id="cb-show-tracks" checked> Show Tracks</label>
+                </div>
+                <div class="legend-section"><div class="legend-title">Subway Lines (Filter)</div><div id="subway-toggles"></div></div>
                 <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px; font-size:0.8em; text-align:center;">
                     <a href="https://github.com/jbnicolai/nycmetro" target="_blank" style="color:rgba(255,255,255,0.5); text-decoration:none;">
                          View on GitHub ↗
@@ -33,16 +37,28 @@ export function createLegend(map, layers, fetchCitibikeFn) {
         const toggleBtn = div.querySelector('.legend-toggle');
         const content = div.querySelector('.legend-content');
 
-        // Default to expanded for clearer UX
-        // div.classList.add('collapsed'); 
-        toggleBtn.textContent = '_';
-        content.style.display = 'block';
+        // Default to collapsed (cleaner UI)
+        div.classList.add('collapsed');
+        toggleBtn.textContent = '+';
+        content.style.display = 'none';
 
         header.addEventListener('click', () => {
             const isCollapsed = div.classList.toggle('collapsed');
             content.style.display = isCollapsed ? 'none' : 'block';
             toggleBtn.textContent = isCollapsed ? '+' : '_';
         });
+
+        // Track Visibility Toggle
+        setTimeout(() => {
+            const trackCb = document.getElementById('cb-show-tracks');
+            if (trackCb) {
+                trackCb.addEventListener('change', (e) => {
+                    const show = e.target.checked;
+                    if (show) layers.routes.addTo(map);
+                    else layers.routes.remove(); // Removes from map but keeps data
+                });
+            }
+        }, 100);
 
         // Citibike Listeners
 
