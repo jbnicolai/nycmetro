@@ -14,13 +14,24 @@
     box-sizing: border-box;
 }
 
+html,
+body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    /* Prevent bounce */
+}
+
 body {
     font-family: var(--font-family);
     background-color: var(--bg-color);
     color: var(--text-color);
-    overflow: hidden;
+    /* Fallback for browsers that don't support dvh */
     height: 100vh;
-    width: 100vw;
+    /* Dynamic Viewport Height (solves the mobile address bar issue) */
+    height: 100dvh;
 }
 
 #app {
