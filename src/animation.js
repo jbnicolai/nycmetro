@@ -191,11 +191,19 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                 lat = posA[0] + (posB[0] - posA[0]) * t;
             }
 
-            const latLng = [lat, lon];
+            // Helper to get name (Moved from inner scope)
+            const getName = (id) => {
+                const s = schedule.stops[id];
+                return s ? s[2] : id;
+            };
 
-            // Update or Create Marker
-            if (activeMarkers[trip.tripId]) {
-                activeMarkers[trip.tripId].setLatLng(latLng);
+
+
+            const latLng = [lat, lon];
+            let marker = activeMarkers[trip.tripId];
+
+            if (marker) {
+                marker.setLatLng(latLng);
             } else {
                 const color = routeInfo.color || '#fff';
                 const icon = L.divIcon({
@@ -204,25 +212,28 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                     iconSize: [12, 12]
                 });
 
-                const marker = L.marker(latLng, { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
-
-                // Helper to get name
-                const getName = (id) => {
-                    const s = schedule.stops[id];
-                    return s ? s[2] : id;
-                };
-
-                const prevStop = trip.stops[currentStopIndex]; // Rename for clarity
-                const nextStop = trip.stops[currentStopIndex + 1];
-
-                marker.bindPopup(() => `
-                    <div class="train-popup" style="min-width: 200px;">
-                        <strong style="color:${color}; font-size:1.2em;">${routeInfo.short_name} Train</strong>
-                        <div style="font-size:0.9em; margin-bottom:5px; color:#555;">${getName(trip.stops[trip.stops.length - 1].id)} Bound</div>
-                    </div>
-                `); // Simplified popup for perf
+                marker = L.marker(latLng, { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
                 activeMarkers[trip.tripId] = marker;
+
+                marker.bindPopup(function () {
+                    const d = this.stopData; // Dynamic data attached to marker
+                    if (!d) return "Loading...";
+                    return `
+                    <div class="train-popup" style="min-width: 200px; font-family: 'Inter', sans-serif;">
+                        <div style="border-bottom: 2px solid ${color}; padding-bottom: 5px; margin-bottom: 5px;">
+                            <strong style="color:${color}; font-size:1.2em;">${routeInfo.short_name} Train</strong>
+                            <div style="font-size:0.8em; color:#888;">To ${getName(trip.stops[trip.stops.length - 1].id)}</div>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 15px 1fr; gap:5px; align-items:center; font-size:0.9em;">
+                            <span style="color:#888;">▼</span> <span>${getName(d.next.id)}</span>
+                            <span style="color:#888; font-size:0.8em;">▲</span> <span style="color:#666; font-size:0.9em;">${getName(d.prev.id)}</span>
+                        </div>
+                    </div>`;
+                });
             }
+
+            // Always update data for the popup to use
+            marker.stopData = { prev, next };
         });
 
         // 3. Remove Old Markers
