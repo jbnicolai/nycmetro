@@ -33,10 +33,10 @@ export function createLegend(map, layers, fetchCitibikeFn) {
         const toggleBtn = div.querySelector('.legend-toggle');
         const content = div.querySelector('.legend-content');
 
-        // Default to collapsed for all screens (cleaner UI)
-        div.classList.add('collapsed');
-        toggleBtn.textContent = '+';
-        content.style.display = 'none';
+        // Default to expanded for clearer UX
+        // div.classList.add('collapsed'); 
+        toggleBtn.textContent = '_';
+        content.style.display = 'block';
 
         header.addEventListener('click', () => {
             const isCollapsed = div.classList.toggle('collapsed');
