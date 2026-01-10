@@ -2,15 +2,15 @@
 # NYC Citibike & Subway Real-Time Map
 
 A realtime map visualization of NYC's Subway and Citibike docks
-- The metro trains are animated based on the official GTFS data from MTA (todo: link)
-- The Citibike dock availability is based on the official data from citibike (todo: link)
+- The metro trains are animated based on the official [MTA GTFS Data](http://web.mta.info/developers/developer-data-terms.html#data).
+- The Citibike dock availability is based on the [Citi Bike System Data](https://camp-gbfs.citibikenyc.com/gbfs/gbfs.json).
 
 ## Architecture
-- **Frontend**: Native ES Modules (Vanilla JS) for maximum performance and zero build-step complexity. using Leaflet.js for mapping and Turf.js for geospatial calculations.
-- **Backend**: Lightweight Python `http.server` serving static files and a JSON API (`/api/config`) for subway routes.
+- **Frontend**: Native ES Modules (Vanilla JS) for maximum performance. Uses Leaflet.js for mapping and Turf.js for geospatial calculations.
+- **Backend**: Lightweight Python `http.server`. Zero dependencies.
 - **Data**: 
     - **Subway**: Static GeoJSON (Map) + GTFS Timetables (Schedule, processed via Python).
-    - **Citibike**: **Live Client-Side Fetch** from GBFS API. Reloads every time the user checks a box or refreshes.
+    - **Citibike**: **Live Client-Side Fetch** from GBFS API. Reloads on interaction.
 
 ## Quick Start
 1. **Run the Server**:

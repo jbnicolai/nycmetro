@@ -21,6 +21,11 @@ export function createLegend(map, layers, fetchCitibikeFn) {
                     <label class="legend-item"><input type="checkbox" id="cb-red"> <span class="color-swatch" style="background:#ef4444"></span> Empty</label>
                 </div>
                 <div class="legend-section"><div class="legend-title">Subway Lines</div><div id="subway-toggles"></div></div>
+                <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px; font-size:0.8em; text-align:center;">
+                    <a href="https://github.com/jbnicolai/nycmetro" target="_blank" style="color:rgba(255,255,255,0.5); text-decoration:none;">
+                         View on GitHub ↗
+                    </a>
+                </div>
             </div>`;
 
         // Toggle Logic
