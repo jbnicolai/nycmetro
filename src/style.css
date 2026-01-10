@@ -209,6 +209,19 @@ h2 {
     overflow: hidden;
     /* For rounded corners on collapse */
     transition: max-height 0.3s ease;
+    z-index: 1000 !important;
+    /* Ensure it floats above map tiles */
+}
+
+@media (max-width: 600px) {
+    .legend-control {
+        position: absolute !important;
+        bottom: 30px !important;
+        /* Move up to avoid Status Panel if they are both bottom */
+        right: 10px !important;
+        max-width: 200px;
+        margin-bottom: 0 !important;
+    }
 }
 
 .legend-header {
@@ -342,18 +355,29 @@ h2 {
     position: absolute;
     bottom: 20px;
     left: 20px;
+
+    /* On mobile, move it away from edge or keep small */
+    @media (max-width: 600px) {
+        bottom: 15px;
+        left: 15px;
+    }
+
     width: 280px;
     background: rgba(10, 10, 15, 0.9);
     border: 1px solid #333;
     border-radius: 6px;
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-family: 'Monaco',
+    'Consolas',
+    monospace;
     font-size: 12px;
     color: #0f0;
     z-index: 2000;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(4px);
     overflow: hidden;
-    transition: width 0.3s ease, height 0.3s ease, background 0.3s ease;
+    transition: width 0.3s ease,
+    height 0.3s ease,
+    background 0.3s ease;
 }
 
 .status-panel.collapsed {
