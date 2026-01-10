@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+*.pyc
+frontend_debug.log
+data/gtfs/
+data/google_transit.zip

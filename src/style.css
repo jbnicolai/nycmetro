@@ -1,0 +1,465 @@
+:root {
+    --bg-color: #0f172a;
+    --text-color: #f8fafc;
+    --accent-color: #38bdf8;
+    --sidebar-bg: rgba(15, 23, 42, 0.75);
+    --sidebar-border: rgba(255, 255, 255, 0.1);
+    --font-family: 'Inter', sans-serif;
+    --transition-speed: 0.3s;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
+
+#app {
+    position: relative;
+    height: 100%;
+    width: 100%;
+}
+
+#map {
+    height: 100%;
+    width: 100%;
+    z-index: 1;
+}
+
+/* Sidebar - Glassmorphism */
+.sidebar {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 350px;
+    max-height: calc(100vh - 40px);
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 16px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    padding: 24px;
+    transition: transform var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1), opacity var(--transition-speed) ease;
+    overflow-y: auto;
+}
+
+.sidebar.hidden {
+    transform: translateX(-120%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+#close-sidebar {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    font-size: 24px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+#close-sidebar:hover {
+    opacity: 1;
+}
+
+/* Typography & Content */
+h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    line-height: 1.2;
+    background: linear-gradient(to right, #fff, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.station-meta {
+    font-size: 0.9rem;
+    color: #94a3b8;
+    margin-bottom: 24px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.stat-card {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 16px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent-color);
+    display: block;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #cbd5e1;
+    margin-top: 4px;
+}
+
+.ebike-highlight {
+    color: #a3e635;
+    /* Lime green for ebikes */
+}
+
+/* Loading Overlay */
+#loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    transition: opacity 0.5s ease;
+}
+
+#loading-overlay.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    border-top-color: var(--accent-color);
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 16px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Leaflet Customizations */
+.leaflet-popup-content-wrapper {
+    background: var(--bg-color);
+    color: var(--text-color);
+    border-radius: 8px;
+}
+
+.leaflet-popup-tip {
+    background: var(--bg-color);
+}
+
+.neighborhood-label {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: #fff;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    padding: 2px 6px;
+    box-shadow: none;
+}
+
+.subway-label {
+    background: #fff;
+    color: #000;
+    border: none;
+    font-weight: bold;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
+/* Legend Control */
+.legend-control {
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    padding: 0;
+    /* Padding moved to content/header */
+    color: var(--text-color);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    min-width: 200px;
+    font-family: var(--font-family);
+    overflow: hidden;
+    /* For rounded corners on collapse */
+    transition: max-height 0.3s ease;
+}
+
+.legend-header {
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--sidebar-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.legend-header:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.legend-toggle {
+    background: none;
+    border: none;
+    color: inherit;
+    font-weight: bold;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.legend-content {
+    padding: 16px;
+}
+
+.legend-control.collapsed {
+    width: auto;
+    min-width: 150px;
+}
+
+.legend-control.collapsed .legend-header {
+    border-bottom: none;
+}
+
+
+.legend-section {
+    margin-bottom: 12px;
+}
+
+.legend-section:last-child {
+    margin-bottom: 0;
+}
+
+.legend-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.legend-item input {
+    margin-right: 8px;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+}
+
+.color-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    display: inline-block;
+}
+
+.subway-swatch {
+    width: 20px;
+    height: 4px;
+    border-radius: 2px;
+}
+
+/* User Location Pulse */
+.user-location-pulse {
+    position: relative;
+}
+
+.user-dot {
+    width: 12px;
+    height: 12px;
+    background-color: #3b82f6;
+    border: 2px solid white;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+}
+
+.pulse-ring {
+    width: 100%;
+    height: 100%;
+    background-color: rgba(59, 130, 246, 0.5);
+    border-radius: 50%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.5);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(2.5);
+        opacity: 0;
+    }
+}
+
+/* Status Panel (Console Look) */
+.status-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 280px;
+    background: rgba(10, 10, 15, 0.9);
+    border: 1px solid #333;
+    border-radius: 6px;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 12px;
+    color: #0f0;
+    z-index: 2000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    overflow: hidden;
+    transition: width 0.3s ease, height 0.3s ease, background 0.3s ease;
+}
+
+.status-panel.collapsed {
+    width: 40px;
+    height: 40px;
+    background: rgba(10, 10, 15, 0.6);
+    border-color: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.status-header {
+    background: #1a1a1a;
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    /* Click header to toggle */
+}
+
+/* Hide title in collapsed mode if we only want the icon */
+.status-panel.collapsed .status-header {
+    display: none;
+}
+
+/* Start with content hidden if logical, but CSS class handles main shape */
+.status-panel.collapsed .status-content {
+    display: none;
+}
+
+/* The floating toggle button when collapsed */
+.status-panel.collapsed::after {
+    content: '>';
+    color: #0f0;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.status-title {
+    font-weight: bold;
+    color: #fff;
+}
+
+.status-toggle {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.status-content {
+    padding: 10px;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.status-key {
+    color: #666;
+}
+
+.status-value {
+    color: #0f0;
+    font-weight: bold;
+}
+
+.status-separator {
+    color: #333;
+    margin: 6px 0;
+    text-align: center;
+    letter-spacing: 2px;
+}
+
+.status-log {
+    margin-top: 10px;
+    height: 80px;
+    overflow-y: auto;
+    border-top: 1px dotted #333;
+    padding-top: 6px;
+    font-size: 11px;
+    color: #888;
+}
+
+.status-log-line {
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Scrollbar for log */
+.status-log::-webkit-scrollbar {
+    width: 4px;
+}
+
+.status-log::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 2px;
+}
