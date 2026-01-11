@@ -1,5 +1,6 @@
 import { parseProperties, formatTime } from './utils.js';
 import { rtState } from './realtime.js';
+import { getActiveAlerts } from './alerts.js';
 
 let stationScheduleIndex = null;
 let rawSchedule = null;
@@ -84,6 +85,8 @@ function getContrastColor(hexColor) {
 
 let routeConfigs = {};
 
+let activeHighlightLayers = [];
+
 export function renderStations(geoJson, layerGroup, schedule, routes) {
     if (schedule && !stationScheduleIndex) {
         buildStationScheduleIndex(schedule);
@@ -92,35 +95,112 @@ export function renderStations(geoJson, layerGroup, schedule, routes) {
         routeConfigs = routes;
     }
 
-    L.geoJSON(geoJson, {
-        pointToLayer: (feature, latlng) => {
-            if (!latlng || isNaN(latlng.lat) || isNaN(latlng.lng)) {
-                console.warn("Invalid station coordinates:", feature);
-                return null;
-            }
+    // 1. Group features into bundles (Same Name + Proximity < 300m)
+    const bundles = [];
 
-            // Try to match station ID if schedule is available
-            if (schedule && schedule.stops && !feature.properties.gtfs_stop_id) {
-                const matchedId = matchStationId(latlng.lat, latlng.lng, schedule.stops);
-                if (matchedId) {
-                    feature.properties.gtfs_stop_id = matchedId;
+    if (!geoJson || !geoJson.features) return;
+
+    geoJson.features.forEach(feature => {
+        if (!feature.geometry || !feature.geometry.coordinates) return;
+
+        const [lng, lat] = feature.geometry.coordinates; // GeoJSON is Lng, Lat
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        const latlng = L.latLng(lat, lng);
+        const { name } = parseProperties(feature); // Ensure utility is imported or just use properties
+
+        // Try to match station ID early (needed for everything else)
+        if (schedule && schedule.stops && !feature.properties.gtfs_stop_id) {
+            const matchedId = matchStationId(lat, lng, schedule.stops);
+            if (matchedId) {
+                feature.properties.gtfs_stop_id = matchedId;
+            }
+        }
+
+        // Find matching bundle
+        let added = false;
+        for (const bundle of bundles) {
+            // Check name and distance to the first element's position
+            // Simple Euclidian approximation or Leaftlet distanceTo
+            const leader = bundle[0];
+            if (leader.name === name) {
+                const dist = leader.latlng.distanceTo(latlng);
+                if (dist < 300) { // 300 meters threshold
+                    bundle.push({ feature, latlng, name });
+                    added = true;
+                    break;
                 }
             }
-
-            return L.circleMarker(latlng, { radius: 3, fillColor: '#ffffff', color: '#000', weight: 1, opacity: 1, fillOpacity: 0.8 });
-        },
-        onEachFeature: (feature, layer) => {
-            if (!layer) return; // Skip if null return from pointToLayer
-            const { name } = parseProperties(feature);
-
-            layer.bindTooltip(name, { direction: 'top', className: 'subway-label' });
-            // Pass the feature which now hopefully has gtfs_stop_id
-            layer.on('click', () => showStationPopup(name, layer, feature));
         }
-    }).addTo(layerGroup);
+
+        if (!added) {
+            bundles.push([{ feature, latlng, name }]);
+        }
+    });
+
+    // 2. Render Bundles
+    bundles.forEach(bundle => {
+        const bundleLayers = [];
+
+        // Create markers for each item in bundle
+        bundle.forEach(item => {
+            const marker = L.circleMarker(item.latlng, {
+                radius: 3,
+                fillColor: '#ffffff',
+                color: '#000',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            });
+
+            // Basic Tooltip
+            marker.bindTooltip(item.name, { direction: 'top', className: 'subway-label' });
+
+            // Add to map layer group
+            marker.addTo(layerGroup);
+            bundleLayers.push(marker);
+        });
+
+        // Bind Click Event to ALL layers in the bundle
+        bundleLayers.forEach(layer => {
+            layer.on('click', () => {
+                highlightBundle(bundleLayers);
+                // Pass all features in the bundle to the popup generator
+                // Use the clicked layer as the anchor
+                showStationPopup(bundle.map(b => b.feature), layer);
+            });
+        });
+    });
 }
 
-function showStationPopup(name, layer, feature) {
+function highlightBundle(layers) {
+    // Reset previous
+    activeHighlightLayers.forEach(l => {
+        if (l) l.setStyle({ radius: 3, color: '#000', weight: 1, fillColor: '#ffffff' });
+    });
+    activeHighlightLayers = [];
+
+    // Highlight new
+    layers.forEach(l => {
+        l.setStyle({ radius: 6, color: '#fbbf24', weight: 3, fillColor: '#ffffff' });
+        l.bringToFront();
+    });
+    activeHighlightLayers = layers;
+}
+
+function showStationPopup(features, layer) {
+    if (!features || features.length === 0) return;
+
+    // Aggregate Data
+    const name = parseProperties(features[0]).name; // Use first name
+    const stopIds = new Set();
+
+    features.forEach(f => {
+        let id = f.properties.gtfs_stop_id || f.properties.stop_id;
+        if (id && id.length > 3) id = id.substring(0, 3);
+        if (id) stopIds.add(id);
+    });
+
     // Current Time
     const now = new Date();
     const secondsSinceMidnight =
@@ -131,49 +211,75 @@ function showStationPopup(name, layer, feature) {
     let content = `<div style="min-width: 250px;">
         <h3 style="margin-top:0; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:5px;">${name}</h3>`;
 
-    // Try to find schedule content
-    let stopId = feature.properties.gtfs_stop_id || feature.properties.stop_id;
-    // Fixed import
-    if (stopId && stopId.length > 3) {
-        stopId = stopId.substring(0, 3);
-    }
+    let dataFound = false;
+    let northList = [];
+    let southList = [];
+    let allRoutes = new Set();
 
-    if (stationScheduleIndex && stopId && stationScheduleIndex[stopId]) {
-        const data = stationScheduleIndex[stopId];
+    if (stationScheduleIndex && stopIds.size > 0) {
+        stopIds.forEach(sid => {
+            if (stationScheduleIndex[sid]) {
+                const d = stationScheduleIndex[sid];
+                // Collect Routes
+                d.N.forEach(t => allRoutes.add(t.routeId));
+                d.S.forEach(t => allRoutes.add(t.routeId));
+                // Collect Trains
+                northList = northList.concat(d.N);
+                southList = southList.concat(d.S);
+                dataFound = true;
+            }
+        });
 
-        const getNextTrains = (list) => {
-            return list.filter(t => {
-                // Check RT status: If trip is past, filter it out? 
-                // For now, simple time check based on schedule is safer fallback
-                return t.time >= secondsSinceMidnight;
-            }).slice(0, 3);
+        // Filter & Sort Merged Lists
+        const filterAndSort = (list) => {
+            return list
+                .filter(t => t.time >= secondsSinceMidnight)
+                .sort((a, b) => a.time - b.time)
+                .slice(0, 4); // Show slightly more for bundles
         };
 
-        const north = getNextTrains(data.N);
-        const south = getNextTrains(data.S);
+        northList = filterAndSort(northList);
+        southList = filterAndSort(southList);
+    }
 
+    // --- Alerts ---
+    const activeAlerts = getActiveAlerts();
+    const stationAlerts = activeAlerts.filter(alert =>
+        alert.routes.some(r => allRoutes.has(r))
+    );
+
+    if (stationAlerts.length > 0) {
+        content += `<div style="background:#451a03; border:1px solid #f59e0b; border-radius:4px; padding:6px; margin-bottom:10px;">
+            <strong style="color:#fbbf24; font-size:0.8em; display:block; margin-bottom:4px;">⚠️ Service Alerts</strong>`;
+
+        stationAlerts.forEach(alert => {
+            const affectedAtStation = alert.routes.filter(r => allRoutes.has(r)).join(', ');
+            content += `<div style="font-size:0.75em; color:#fff; margin-bottom:4px; line-height:1.2;">
+                <span style="color:#fbbf24">[${affectedAtStation}]</span> ${alert.header}
+            </div>`;
+        });
+        content += `</div>`;
+    }
+    // --------------
+
+    if (dataFound) {
         const renderRow = (t) => {
             const routeId = t.routeId;
             const color = routeConfigs[routeId] ? routeConfigs[routeId].color : '#666';
             const textColor = getContrastColor(color);
 
-            // Real-Time Lookup
+            // Real-Time Logic (Simplified)
             let displayTime = t.time;
             let statusBadge = "";
             let timeClass = "color:#555;";
 
             if (rtState.mode === 'REALTIME' && rtState.trips.has(t.tripId)) {
                 const rt = rtState.trips.get(t.tripId);
-                // Calculate delay relative to the *current* station's scheduled time?
-                // Using the specific stop update would be best, but we only have the "current status" stop in rtState.trips
-                // We approximated delay in animation.js using (current_rt_time - scheduled_time_at_current_rt_stop).
-                // Let's assume that delay propagates. Use the same delay logic?
-                // Complex without full trip updates. 
-                // SIMPLIFICATION: If we have RT data, we just assume "Live" status, 
-                // but without exact per-station predictions, maybe just show "Live" icon?
+                // Check if stopped at ANY of our possible stop IDs
+                // Stop IDs in RT might have N/S suffix
+                const isAtStation = Array.from(stopIds).some(baseId => rt.stopId.startsWith(baseId));
 
-                // Better: If the train is "STOPPED_AT" this very station, say "At Station"
-                if (rt.stopId.startsWith(stopId)) { // imprecise match (N/S suffix)
+                if (isAtStation) {
                     statusBadge = `<span style="color:#ef4444; font-weight:bold; font-size:0.8em; margin-right:4px;">● At Station</span>`;
                     timeClass = "color:#000; font-weight:bold;";
                 } else {
@@ -203,11 +309,11 @@ function showStationPopup(name, layer, feature) {
         content += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
             <div>
                 <strong style="font-size:0.75em; text-transform:uppercase; color:#888; display:block; margin-bottom:6px;">Northbound</strong>
-                ${north.length ? north.map(renderRow).join('') : '<div style="color:#aaa; font-size:0.8em; font-style:italic;">No trains</div>'}
+                ${northList.length ? northList.map(renderRow).join('') : '<div style="color:#aaa; font-size:0.8em; font-style:italic;">No trains</div>'}
             </div>
             <div>
                 <strong style="font-size:0.75em; text-transform:uppercase; color:#888; display:block; margin-bottom:6px;">Southbound</strong>
-                ${south.length ? south.map(renderRow).join('') : '<div style="color:#aaa; font-size:0.8em; font-style:italic;">No trains</div>'}
+                ${southList.length ? southList.map(renderRow).join('') : '<div style="color:#aaa; font-size:0.8em; font-style:italic;">No trains</div>'}
             </div>
         </div>`;
 
