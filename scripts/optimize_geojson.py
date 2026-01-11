@@ -14,7 +14,7 @@ def round_coords(coords, precision=5):
         return [round_coords(c, precision) for c in coords]
     return coords
 
-def optimize_file(filepath):
+def optimize_json(filepath):
     print(f"Optimizing {filepath}...")
     try:
         with open(filepath, 'r') as f:
@@ -22,39 +22,43 @@ def optimize_file(filepath):
         
         initial_size = os.path.getsize(filepath)
         
+        # Optimize Features (GeoJSON or Config structure)
+        features = []
         if 'features' in data:
-            for feature in data['features']:
-                # 1. Strip Properties (But extract useful data first)
-                props = feature.get('properties', {})
-                desc = props.get('description', '')
-                
-                # Parse Socrata HTML Description for Name and Line
-                # Format is: <span class="atr-name">NAME</span>:</strong> <span class="atr-value">Values</span>
-                if desc:
-                    import re
-                    # Extract Name
-                    name_match = re.search(r'<span class="atr-name">NAME</span>:</strong> <span class="atr-value">([^<]+)</span>', desc)
-                    if name_match:
-                        props['name'] = name_match.group(1).strip()
-                    
-                    # Extract Line
-                    line_match = re.search(r'<span class="atr-name">LINE</span>:</strong> <span class="atr-value">([^<]+)</span>', desc)
-                    if line_match:
-                        props['lines'] = line_match.group(1).strip()
-                
-                if 'description' in props:
-                    del props['description']
-                
-                # Clean up other typically unused Socrata fields
-                for key in ['url', 'objectid', 'geo_id_ir', 'geometry_name']:
-                    if key in props:
-                        del props[key]
+            features = data['features']
+        elif 'shapes' in data and 'features' in data['shapes']:
+            features = data['shapes']['features']
 
-                feature['properties'] = props
+        for feature in features:
+            # 1. Strip Properties (But extract useful data first)
+            props = feature.get('properties', {})
+            desc = props.get('description', '')
+            
+            if desc:
+                import re
+                # Extract Name
+                name_match = re.search(r'<span class="atr-name">NAME</span>:</strong> <span class="atr-value">([^<]+)</span>', desc)
+                if name_match:
+                    props['name'] = name_match.group(1).strip()
+                
+                # Extract Line
+                line_match = re.search(r'<span class="atr-name">LINE</span>:</strong> <span class="atr-value">([^<]+)</span>', desc)
+                if line_match:
+                    props['lines'] = line_match.group(1).strip()
+            
+            if 'description' in props:
+                del props['description']
+            
+            # Clean up other typically unused Socrata fields
+            for key in ['url', 'objectid', 'geo_id_ir', 'geometry_name']:
+                if key in props:
+                    del props[key]
 
-                # 2. Round Coordinates
-                if 'geometry' in feature and feature['geometry']:
-                    feature['geometry']['coordinates'] = round_coords(feature['geometry']['coordinates'])
+            feature['properties'] = props
+
+            # 2. Round Coordinates
+            if 'geometry' in feature and feature['geometry']:
+                feature['geometry']['coordinates'] = round_coords(feature['geometry']['coordinates'], 5)
 
         with open(filepath, 'w') as f:
             json.dump(data, f, separators=(',', ':')) # Minify whitespace
@@ -69,11 +73,12 @@ def optimize_file(filepath):
 if __name__ == "__main__":
     files = [
         "data/nyc-neighborhoods.geojson",
-        "data/subway-stations.geojson"
+        "data/subway-stations.geojson",
+        "data/subway_config.json"
     ]
     
     for f in files:
         if os.path.exists(f):
-            optimize_file(f)
+            optimize_json(f)
         else:
             print(f"File not found: {f}")
