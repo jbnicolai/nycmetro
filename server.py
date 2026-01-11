@@ -196,31 +196,6 @@ def fetch_realtime_feed():
             continue
     
 
-
-    # DEBUG: Dump IDs to file
-    try:
-        with open("debug_ids.txt", "w") as f:
-            f.write("--- RT Sample IDs ---\n")
-            # We need to collect some trip IDs from the feed we just parsed
-            # But the loop above iterates multiple feeds.
-            # Let's just dump the `trips` list we collected so far.
-            for t in trips[:20]:
-                f.write(f"RT: {t['tripId']} (Route: {t['routeId']})\n")
-            
-            f.write("\n--- Schedule Sample IDs ---\n")
-            # Access global SCHEDULE_CACHE
-            if 'SCHEDULE_CACHE' in globals() and SCHEDULE_CACHE:
-                if 'A' in SCHEDULE_CACHE['routes']:
-                    f.write("Route A Samples:\n")
-                    for t in SCHEDULE_CACHE['routes']['A'][:10]:
-                        f.write(f"Static: {t['tripId']}\n")
-                if '1' in SCHEDULE_CACHE['routes']:
-                    f.write("Route 1 Samples:\n")
-                    for t in SCHEDULE_CACHE['routes']['1'][:10]:
-                        f.write(f"Static: {t['tripId']}\n")
-    except Exception as e:
-        print(f"Debug Write Error: {e}")
-
     # Update Global Alerts Cache once after all feeds
     with alerts_lock:
         ALERTS_CACHE[:] = collected_alerts # Replace in-place

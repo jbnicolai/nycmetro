@@ -209,7 +209,7 @@ function showStationPopup(features, layer) {
         now.getSeconds();
 
     let content = `<div style="min-width: 250px;">
-        <h3 style="margin-top:0; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:5px;">${name}</h3>`;
+        <h3 style="margin-top:0; margin-bottom:5px; padding-bottom:5px;">${name}</h3>`;
 
     let dataFound = false;
     let northList = [];
@@ -230,12 +230,75 @@ function showStationPopup(features, layer) {
             }
         });
 
-        // Filter & Sort Merged Lists
+        // Add Route Badges to Header (immediately after collecting allRoutes)
+        if (allRoutes.size > 0) {
+            const badges = Array.from(allRoutes).sort().map(rid => {
+                const color = routeConfigs[rid] ? routeConfigs[rid].color : '#666';
+                const textColor = getContrastColor(color);
+                return `<span style="background-color:${color}; color:${textColor}; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em; margin-right:4px;">${rid}</span>`;
+            }).join('');
+            content += `<div style="margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #ddd;">${badges}</div>`;
+        } else {
+            content += `<div style="border-bottom:1px solid #ddd; margin-bottom:10px;"></div>`;
+        }
+
+        // Helper to find RT data
+        const getRealtimeData = (tripId) => {
+            if (rtState.mode !== 'REALTIME') return null;
+            // Strict
+            if (rtState.trips.has(tripId)) return rtState.trips.get(tripId);
+            // Fuzzy
+            const parts = tripId.split('..');
+            if (parts.length >= 2) {
+                const key = parts[0] + '_' + parts[1][0];
+                if (rtState.fuzzyTrips.has(key)) return rtState.fuzzyTrips.get(key);
+            }
+            return null;
+        };
+
+        // Helper to calculate delay
+        const getTripDelay = (tripId, rt) => {
+            if (!rt || !rawSchedule || !rawSchedule.routes) return 0;
+            const routeTrips = rawSchedule.routes[rt.routeId];
+            if (!routeTrips) return 0;
+
+            // Find the trip setup in schedule
+            const trip = routeTrips.find(tr => tr.tripId === tripId);
+            if (!trip) return 0;
+
+            const currentStop = trip.stops.find(s => s.id === rt.stopId);
+            if (!currentStop) return 0;
+
+            // Normalize RT Time (Unix Epoch) to Seconds Since Midnight local time
+            const rtDate = new Date(rt.time * 1000);
+            const rtSeconds = rtDate.getHours() * 3600 + rtDate.getMinutes() * 60 + rtDate.getSeconds();
+
+            // Handle potential day wrapping comparison
+            let diff = rtSeconds - currentStop.time;
+            if (diff < -43200) diff += 86400;
+            if (diff > 43200) diff -= 86400;
+
+            return diff;
+        };
+
+        // Filter & Sort Merged Lists with Live Data
         const filterAndSort = (list) => {
             return list
-                .filter(t => t.time >= secondsSinceMidnight)
-                .sort((a, b) => a.time - b.time)
-                .slice(0, 4); // Show slightly more for bundles
+                .map(t => {
+                    const rt = getRealtimeData(t.tripId);
+                    let delay = 0;
+                    let isLive = false;
+
+                    if (rt) {
+                        delay = getTripDelay(t.tripId, rt);
+                        isLive = true;
+                    }
+
+                    return { ...t, predictedTime: t.time + delay, isLive, rt };
+                })
+                .filter(t => t.predictedTime >= secondsSinceMidnight) // Filter by PREDICTED time
+                .sort((a, b) => a.predictedTime - b.predictedTime)
+                .slice(0, 5);
         };
 
         northList = filterAndSort(northList);
@@ -268,22 +331,32 @@ function showStationPopup(features, layer) {
             const color = routeConfigs[routeId] ? routeConfigs[routeId].color : '#666';
             const textColor = getContrastColor(color);
 
-            // Real-Time Logic (Simplified)
-            let displayTime = t.time;
+            // Real-Time Logic
+            let displayTime = t.predictedTime; // Use predicted
             let statusBadge = "";
             let timeClass = "color:#555;";
 
-            if (rtState.mode === 'REALTIME' && rtState.trips.has(t.tripId)) {
-                const rt = rtState.trips.get(t.tripId);
-                // Check if stopped at ANY of our possible stop IDs
-                // Stop IDs in RT might have N/S suffix
+            if (t.isLive) {
+                // Check if stopped at current station
+                const rt = t.rt;
                 const isAtStation = Array.from(stopIds).some(baseId => rt.stopId.startsWith(baseId));
 
                 if (isAtStation) {
                     statusBadge = `<span style="color:#ef4444; font-weight:bold; font-size:0.8em; margin-right:4px;">● At Station</span>`;
                     timeClass = "color:#000; font-weight:bold;";
                 } else {
-                    statusBadge = `<span style="color:#22c55e; font-size:0.8em; margin-right:4px;">📶 Live</span>`;
+                    const delayMins = Math.round((t.predictedTime - t.time) / 60);
+                    let delayText = "Live";
+                    let delayColor = "#22c55e"; // Green
+
+                    if (delayMins > 2) {
+                        delayText = `+${delayMins} min`;
+                        delayColor = "#ef4444"; // Red
+                    } else if (delayMins < -2) {
+                        delayText = `${delayMins} min`;
+                    }
+
+                    statusBadge = `<span style="color:${delayColor}; font-size:0.8em; margin-right:4px;">📶 ${delayText}</span>`;
                 }
             }
 
