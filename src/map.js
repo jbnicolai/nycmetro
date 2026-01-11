@@ -160,7 +160,9 @@ export function renderSubwayLines(map, shapes, routes) {
 
     // 1. Generate Visual Offsets
     const offsetFeatures = [];
-    if (window.turf) {
+    const turf = window.turf; // Local reference
+
+    if (turf) {
         shapes.features.forEach(f => {
             let candidate = f;
             try {
@@ -168,48 +170,30 @@ export function renderSubwayLines(map, shapes, routes) {
                 const offset = COLOR_OFFSETS[color] || 0;
 
                 if (Math.abs(offset) > 0) {
-                    let offsetLine;
+                    // Try Turf offset
                     try {
-                        offsetLine = window.turf.lineOffset(f, offset, { units: 'kilometers' });
-                    } catch (turfErr) {
-                        // Turf failed, ignore
-                    }
-
-                    // Copy properties
-                    if (offsetLine) {
-                        offsetLine.properties = f.properties;
-                        if (validateCoords(offsetLine.geometry.coordinates)) {
+                        const offsetLine = turf.lineOffset(f, offset, { units: 'kilometers' });
+                        if (offsetLine && validateCoords(offsetLine.geometry.coordinates)) {
+                            // Copy properties and use this line
+                            offsetLine.properties = f.properties;
                             candidate = offsetLine;
-                        } else {
-                            // Debug logging for the first few failures
-                            if (Math.random() < 0.05) {
-                                console.warn(`[Offset Failed] Invalid Output for ${f.properties.route_id}:`,
-                                    JSON.stringify(offsetLine.geometry.coordinates).slice(0, 100));
-                            }
-                            // Fallback: Manual Jitter
-                            // If turf failed, we just shift lat/lon slightly based on index
-                            // This is a naive "poor man's offset"
-                            candidate = JSON.parse(JSON.stringify(f));
-                            const jitter = offset * 0.005; // approx conversion km to deg
-                            candidate.geometry.coordinates = candidate.geometry.coordinates.map(coord => {
-                                return [coord[0] + jitter, coord[1] + jitter];
-                            });
                         }
+                    } catch (turfErr) {
+                        // Turf failed (geometry errors?), fall back to original
                     }
                 }
             } catch (err) {
                 console.warn("Offset calculation failed", err);
             }
 
-            // FINAL GATEKEEPER
+            // Safety Check
             if (validateCoords(candidate.geometry.coordinates)) {
                 offsetFeatures.push(candidate);
-            } else {
-                console.error(`[CRITICAL] Dropping corrupt feature: Route ${f.properties.route_id}`);
             }
         });
     } else {
-        // No turf? Check originals
+        // Fallback if Turf missing
+        console.warn("Turf.js not active. Rendering raw shapes.");
         shapes.features.forEach(f => {
             if (validateCoords(f.geometry.coordinates)) {
                 offsetFeatures.push(f);
