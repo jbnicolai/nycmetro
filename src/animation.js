@@ -275,48 +275,53 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             // ALWAYS FALLBACK (Backfill):
             // Even if isRtRoute is true, we might miss some trains (e.g. Departed/Finished).
             // Check schedule for any trains that are active/departed but currently missing from Live.
-            const schedTrips = schedule.routes[routeIdRaw] || schedule.routes[routeId] || [];
+            // CHANGE: User requested STRICT separation. If we have live data for a route, 
+            // we assume the live feed is the SOURCE OF TRUTH and do NOT backfill with schedule.
+            // This prevents "Ghost Trains" (Scheduled) appearing next to Live trains.
+            if (!isRtRoute) {
+                const schedTrips = schedule.routes[routeIdRaw] || schedule.routes[routeId] || [];
 
-            // As optimization, only run full backfill if we have gaps or if it's the requested route?
-            // No, we need it for all to ensure map consistency.
-            // Use classic loop for speed.
-            for (let i = 0; i < schedTrips.length; i++) {
-                const trip = schedTrips[i];
+                // As optimization, only run full backfill if we have gaps or if it's the requested route?
+                // No, we need it for all to ensure map consistency.
+                // Use classic loop for speed.
+                for (let i = 0; i < schedTrips.length; i++) {
+                    const trip = schedTrips[i];
 
-                // DEDUP:
-                // 1. Strict ID Match
-                if (isRtRoute && liveTripIds.has(trip.tripId)) continue;
+                    // DEDUP:
+                    // 1. Strict ID Match
+                    if (isRtRoute && liveTripIds.has(trip.tripId)) continue;
 
-                const stops = trip.stops;
-                if (!stops || stops.length < 2) continue;
-                const startTime = stops[0].time;
+                    const stops = trip.stops;
+                    if (!stops || stops.length < 2) continue;
+                    const startTime = stops[0].time;
 
-                if (isRtRoute) {
-                    const stopId = stops[0].stopId;
-                    const dir = stopId ? stopId.slice(-1) : null;
-                    if (dir === 'N' || dir === 'S') {
-                        const times = liveTimesByDir[dir];
-                        // If any live train is within 5 minutes (300s) of this scheduled time, assume covered.
-                        // (NYC Headways are >5m usually, so collision implies same train)
-                        const isCovered = times.some(t => Math.abs(t - startTime) < 300);
-                        if (isCovered) continue;
+                    if (isRtRoute) {
+                        const stopId = stops[0].stopId;
+                        const dir = stopId ? stopId.slice(-1) : null;
+                        if (dir === 'N' || dir === 'S') {
+                            const times = liveTimesByDir[dir];
+                            // If any live train is within 5 minutes (300s) of this scheduled time, assume covered.
+                            // (NYC Headways are >5m usually, so collision implies same train)
+                            const isCovered = times.some(t => Math.abs(t - startTime) < 300);
+                            if (isCovered) continue;
+                        }
                     }
+
+                    const endTime = stops[stops.length - 1].time;
+
+                    // Extended window for scheduled too
+                    if (secondsSinceMidnight < startTime - 600 || secondsSinceMidnight > endTime + 900) continue;
+
+                    stats[routeId].schedCount++;
+                    activeList.push({
+                        trip,
+                        routeId,
+                        routeInfo,
+                        isRealtime: false,
+                        source: 'scheduled',
+                        delay: 0
+                    });
                 }
-
-                const endTime = stops[stops.length - 1].time;
-
-                // Extended window for scheduled too
-                if (secondsSinceMidnight < startTime - 600 || secondsSinceMidnight > endTime + 900) continue;
-
-                stats[routeId].schedCount++;
-                activeList.push({
-                    trip,
-                    routeId,
-                    routeInfo,
-                    isRealtime: false,
-                    source: 'scheduled',
-                    delay: 0
-                });
             }
         }
 
