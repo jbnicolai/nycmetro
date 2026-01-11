@@ -97,7 +97,53 @@ async function fetchRealtimeData() {
         rtState.hasError = true;
         rtState.mode = 'SCHEDULE_FALLBACK';
         updateUI(false);
+
     }
+}
+
+export function getMatchingTrip(tripId, routeId) {
+    if (rtState.mode !== 'REALTIME') return null;
+
+    // 1. Strict Match
+    if (rtState.trips.has(tripId)) return rtState.trips.get(tripId);
+
+    // 2. Legacy Fuzzy (Split by ..)
+    const parts = tripId.split('..');
+    if (parts.length >= 2) {
+        const [left, right] = parts;
+        const dir = right.charAt(0);
+        const key = `${left}_${dir}`;
+        if (rtState.fuzzyTrips.has(key)) return rtState.fuzzyTrips.get(key);
+
+        // 3. Proximity Matching (Robust NYC logic)
+        const timeStr = left.split('_')[0];
+        if (timeStr.length === 6) {
+            const h = parseInt(timeStr.substring(0, 2));
+            const m = parseInt(timeStr.substring(2, 4));
+            const s = parseInt(timeStr.substring(4, 6));
+            const schedStart = h * 3600 + m * 60 + s;
+
+            const groupKey = `${routeId}_${dir}`;
+            const group = rtState.tripGroups.get(groupKey);
+            if (group) {
+                // Find closest trip within 15 minutes (generous for late night)
+                let best = null;
+                let minDiff = 900; // 15 mins
+
+                for (const rtTrip of group) {
+                    const diff = Math.abs(rtTrip.startTime - schedStart);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        best = rtTrip.data;
+                    }
+                }
+                if (best) {
+                    return best;
+                }
+            }
+        }
+    }
+    return null;
 }
 
 function updateUI(isHealthy) {
