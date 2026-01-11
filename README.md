@@ -65,6 +65,34 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
     python3 scripts/update_data.py
     ```
 
+## Development Reference
+
+### Project Structure
+```
+.
+├── server.py              # Main backend server (API & Static File serving)
+├── index.html             # Application entry point
+├── run_dev.sh             # Dev startup script
+├── scripts/
+│   ├── update_data.py     # ETL script to download/process GTFS data
+│   └── optimize_geojson.py# Utility to minify shape data
+├── src/                   # Frontend Source Code
+│   ├── main.js            # App initialization & core logic
+│   ├── map.js             # Leaflet map configuration & rendering
+│   ├── animation.js       # Train animation loop & path interpolation
+│   ├── realtime.js        # GTFS-Realtime processing
+│   ├── stations.js        # Station rendering & schedule logic
+│   ├── citibike.js        # Citi Bike data integration
+│   ├── alerts.js          # Service alerts state
+│   └── logger.js          # Remote logging utility
+└── data/                  # Generated data artifacts (gitignored except examples)
+```
+
+### Debugging
+- **Logs**: The frontend pipes `console.log` to the backend when `?debug=true` is in the URL. Check `frontend_debug.log`.
+- **Backend**: `server.py` output is printed to stdout/stderr.
+- **Visuals**: Use `isDebugSegment` in `animation.js` to inspect path finding logic for specific trains.
+
 ## Roadmap
 
 ### Information Hierarchy
