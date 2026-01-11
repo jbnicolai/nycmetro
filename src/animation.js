@@ -258,8 +258,8 @@ function findPathSegment(posA, posB, availableShapes) {
             // Distance from stops to the line
             const d = snapA.properties.dist + snapB.properties.dist;
 
-            // Threshold: < 0.2km total error preferred
-            if (d < 0.5 && d < minDist) {
+            // Threshold: < 1.0km total error preferred (Increased from 0.5)
+            if (d < 1.0 && d < minDist) {
                 minDist = d;
                 bestShape = shape;
             }

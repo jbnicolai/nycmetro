@@ -141,11 +141,12 @@ export function initMap() {
 
 const COLOR_OFFSETS = {
     // Colors of overlapping trunk lines
-    '#0062CF': -0.04, // Blue (A,C,E)
-    '#EB6800': 0.04,  // Orange (B,D,F,M)
-    '#EE352E': -0.02, // Red (1,2,3)
-    '#00933C': 0.02,  // Green (4,5,6)
-    '#FCCC0A': 0.01   // Yellow (N,Q,R,W)
+    // Temporarily disabled to fix visual gaps/disconnections
+    // '#0062CF': -0.04, // Blue (A,C,E)
+    // '#EB6800': 0.04,  // Orange (B,D,F,M)
+    // '#EE352E': -0.02, // Red (1,2,3)
+    // '#00933C': 0.02,  // Green (4,5,6)
+    // '#FCCC0A': 0.01   // Yellow (N,Q,R,W)
 };
 
 export async function renderSubwayLines(map, shapes, routes) {
