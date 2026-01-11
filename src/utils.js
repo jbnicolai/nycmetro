@@ -1,4 +1,11 @@
 
+export function formatTime(s) {
+    if (s === undefined || s === null) return "--:--";
+    const date = new Date(s * 1000); // Input is seconds, Date takes ms
+    // Format to HH:MM:SS, using simple slice
+    return date.toISOString().substr(11, 8);
+}
+
 export function parseProperties(feature) {
     const props = feature.properties;
     let name = props.name || "Station";

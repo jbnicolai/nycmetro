@@ -110,7 +110,7 @@ async function runApp() {
         // 3. Stations (from Local)
         try {
             StatusPanel.log("Rendering Stations...");
-            renderStations(stationsRes, layers.stations);
+            renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
             StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
         } catch (e) { throw new Error("Station Rendering Failed: " + e.message); }
 
