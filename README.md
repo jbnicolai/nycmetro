@@ -97,7 +97,6 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - [ ] **Browser History**: Implement back/undo navigation for station and train selections.
 - [ ] **Deep Linking**: Support deep linking to trains/stations via URL hash.
 - [ ] **Smart Matching**: Improve ID matching algorithm (fuzzy route/direction matching) to link more live trains to the schedule.
-- [ ] **Location Icon**: If location data is available, show location icon by default.
 
 ## Known Issues
 - **Ghost Trains**: Some real-time trips may not match perfectly to the static schedule, resulting in "Unknown" destinations or missing stops.

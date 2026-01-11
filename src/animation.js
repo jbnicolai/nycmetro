@@ -537,6 +537,9 @@ function getStopCoords(schedule, stopId) {
 
 function createTrainMarker(trip, routeInfo) {
     const color = routeInfo.color || '#fff';
+    const routeId = routeInfo.id || '?';
+    const dest = trip.headsign || 'Subway';
+
     // CSS-based Icon with large hit area (32px)
     const icon = L.divIcon({
         className: 'train-icon',
@@ -554,6 +557,24 @@ function createTrainMarker(trip, routeInfo) {
     });
 
     const marker = L.marker([0, 0], { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
+
+    // Train Hover Label with Badge
+    const tooltipHtml = `
+        <div class="train-label-content">
+            <span class="route-badge" style="background-color: ${color};">${routeId}</span>
+            <span class="dest-text">${dest}</span>
+        </div>
+    `;
+
+    marker.bindTooltip(tooltipHtml, {
+        className: 'train-label',
+        direction: 'top',
+        offset: [0, -15],
+        opacity: 1,
+        permanent: false,
+        sticky: true
+    });
+
     return marker;
 }
 

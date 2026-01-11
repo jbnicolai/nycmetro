@@ -286,7 +286,14 @@ export function renderStations(geoJson, layerGroup, schedule, routes) {
             });
 
             // Basic Tooltip
-            marker.bindTooltip(item.name, { direction: 'top', className: 'subway-label' });
+            // Consistent Dark-Themed Tooltip
+            marker.bindTooltip(item.name, {
+                direction: 'top',
+                className: 'train-label station-hover-label', // Reuse train styles
+                offset: [0, -10],
+                opacity: 1,
+                sticky: true
+            });
 
             // Index for jumping
             const sId = item.feature.properties.gtfs_stop_id;

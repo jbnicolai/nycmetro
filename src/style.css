@@ -1404,3 +1404,71 @@ body.rt-error .leaflet-control-container .leaflet-top {
     0% { transform: scale(0.8); opacity: 0.5; }
     100% { transform: scale(3.5); opacity: 0; }
 }
+
+/* Train Hover Tooltips */
+.train-label {
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.train-label::before {
+    display: none; /* Hide default arrow */
+}
+
+/* Enhanced Map Labels (Trains & Stations) */
+.train-label {
+    background: rgba(15, 23, 42, 0.9) !important;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+    padding: 0 !important; /* Managed by content div */
+    overflow: hidden;
+}
+
+.train-label-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+}
+
+.train-label .route-badge {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 800;
+    color: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.train-label .dest-text, 
+.station-hover-label {
+    color: white !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.station-hover-label {
+    padding: 4px 10px !important;
+}
+
+.leaflet-tooltip-top.train-label::before {
+    border-top-color: rgba(15, 23, 42, 0.9) !important;
+}
+
+/* Hide default subway-label if any left */
+.subway-label { display: none !important; }
