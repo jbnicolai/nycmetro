@@ -126,9 +126,7 @@ export function getMatchingTrip(tripId, routeId) {
             const groupKey = `${routeId}_${dir}`;
             const group = rtState.tripGroups.get(groupKey);
             if (group) {
-                // Find closest trip within 15 minutes (generous for late night)
-                let best = null;
-                let minDiff = 900; // 15 mins
+                let minDiff = 600; // 10 mins (NYC headways are often 8-12m)
 
                 for (const rtTrip of group) {
                     const diff = Math.abs(rtTrip.startTime - schedStart);
