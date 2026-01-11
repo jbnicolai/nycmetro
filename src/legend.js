@@ -85,7 +85,7 @@ export function createLegend(map, layers, fetchCitibikeFn) {
                     trackBtn.style.color = "var(--accent-color)";
                     trackBtn.style.opacity = "1";
                 } else {
-                    layers.routes.remove();
+                    layers.routes.removeFrom(map);
                     trackBtn.innerText = "Show Tracks";
                     trackBtn.style.color = "rgba(255,255,255,0.5)";
                     trackBtn.style.opacity = "0.7";

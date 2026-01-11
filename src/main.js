@@ -87,104 +87,118 @@ async function runApp() {
 
 
     try {
-        // 1. Critical Fetch: Core Map Data (Parallel)
-        console.time("CoreFetch");
-        const [config, stationsRes, neighborhoodsRes] = await Promise.all([
-            fetchConfig().catch(e => { throw new Error("Config Fetch Failed: " + e) }),
-            fetch('./data/subway-stations.geojson').then(r => r.json()).catch(e => { throw new Error("Stations Fetch Failed: " + e) }),
-            fetch('./data/nyc-neighborhoods.geojson').then(r => r.json()).catch(e => { throw new Error("Neighborhoods Fetch Failed: " + e) }),
-        ]);
-        console.timeEnd("CoreFetch");
+        window.startupMetrics = { fetchStart: performance.now() };
+        console.time("StartupToLive");
 
-        const trainLoader = document.getElementById('train-loading');
-        let renderedShapes = config.shapes; // Fallback
+        // 1. Critical Fetch: Start EVERYTHING in parallel immediately
+        console.log("Starting eager data prefetch...");
+        const dataPromises = {
+            config: fetchConfig().catch(e => { throw new Error("Config Fetch Failed: " + e) }),
+            stations: fetch('./data/subway-stations.geojson').then(r => r.json()).catch(e => { throw new Error("Stations Fetch Failed: " + e) }),
+            neighborhoods: fetch('./data/nyc-neighborhoods.geojson').then(r => r.json()).catch(e => { throw new Error("Neighborhoods Fetch Failed: " + e) }),
+            schedule: fetch('/api/schedule').then(r => r.json()).catch(e => { throw new Error("Schedule Fetch Failed: " + e) }),
+            realtime: initRealtime().catch(e => { throw new Error("Realtime Init Failed: " + e) })
+        };
 
-        // Create a promise that resolves when the map stops moving or after a timeout
         const mapReady = new Promise(resolve => {
             let fired = false;
-            const done = () => { if (!fired) { fired = true; resolve(); } };
+            const done = () => { if (!fired) { fired = true; resolve(performance.now()); } };
             map.once('moveend', done);
             setTimeout(done, 4000); // Guard timeout
         });
 
-        // 2. Trigger Auto-Locate IMMEDIATELY (Only if approved, else it stays default)
+        // 2. Trigger Auto-Locate IMMEDIATELY 
         if (window.triggerLocate) {
             window.triggerLocate();
         }
 
-        // Wait for map to settle before slamming the CPU with rendering
-        await mapReady;
+        // Resolve core data (Parallel with map animation)
+        const [config, stationsRes, neighborhoodsRes] = await Promise.all([
+            dataPromises.config,
+            dataPromises.stations,
+            dataPromises.neighborhoods
+        ]);
+        window.startupMetrics.coreDataReady = performance.now();
+        console.log(`Core data ready in ${Math.round(window.startupMetrics.coreDataReady - window.startupMetrics.fetchStart)}ms`);
 
         StatusPanel.init();
-        StatusPanel.log("Location locked. Rendering system...");
         StatusPanel.update("routes", Object.keys(config.routes).length);
 
-        // --- PHASE 2: Hide Overlay, Rendering Static Layers ---
-        const loadingOverlay = document.getElementById('loading-overlay');
-        if (loadingOverlay) {
-            loadingOverlay.classList.add('fade-out');
-            setTimeout(() => loadingOverlay.style.display = 'none', 500);
-        }
-        if (trainLoader) trainLoader.classList.remove('hidden');
+        // --- PHASE 2: UI Transitions & Background Rendering ---
+        // We render these even if the map is still zooming! 
+        // Leaflet's Canvas handles this gracefully.
 
         // Neighborhoods
         L.geoJSON(neighborhoodsRes, {
-            style: { color: '#38bdf8', weight: 1, opacity: 0.3, fillColor: '#0f172a', fillOpacity: 0.1 }
+            style: { color: '#38bdf8', weight: 1, opacity: 0.3, fillColor: '#0f172a', fillOpacity: 0.1 },
+            pane: 'neighborhoodsPane'
         }).addTo(layers.neighborhoods);
 
-        // Subway Lines
-        console.log("Rendering Subway Lines...");
+        // Subway Lines & Legend
         const lineResult = await renderSubwayLines(map, config.shapes, config.routes);
-        if (lineResult) renderedShapes = lineResult;
-
-        // Update Legend
+        let renderedShapes = lineResult || config.shapes;
         updateLegendLines(config.routes, toggleRouteLayerBatch);
 
-        // Init Alerts
-        const legendControl = document.querySelector('.legend-control');
-        initAlerts(legendControl);
-
-        // Initial Station Render
+        // Stations
         renderStations(stationsRes, layers.stations, null, config.routes);
         StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
 
-
-        // 5. Synchronized Data Loading: Schedule + Real-time
-        StatusPanel.log("Loading Schedule & Real-time data...");
-        console.time("HeavyLoading");
-
-        try {
-            const [scheduleRes] = await Promise.all([
-                fetch('/api/schedule').then(r => r.json()),
-                initRealtime() // Also fetches first RT payload
-            ]);
-            console.timeEnd("HeavyLoading");
-            StatusPanel.log("Data synchronized. Starting engines...");
-
-            // Re-render stations with schedule data to enable popups matches
-            layers.stations.clearLayers();
-            renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
-
-            // Start Animation
-            console.log("Starting animation with filter:", visibilityFilter);
-            startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
-
-            // --- PHASE 3 COMPLETE: Hide Train Loader ---
-            if (trainLoader) {
-                trainLoader.classList.add('hidden');
+        // Utility: Smoothly Reveal Panes
+        const reveal = (paneName) => {
+            const pane = map.getPane(paneName + 'Pane');
+            if (pane) {
+                pane.classList.remove('layer-hidden');
+                pane.classList.add('layer-visible');
             }
+        };
 
-        } catch (e) {
-            console.warn("Synchronized Loading Failed", e);
-            StatusPanel.log("Data synchronization failed.");
-            if (trainLoader) {
-                trainLoader.innerHTML = "<span>Sync Error</span>";
-                setTimeout(() => trainLoader.classList.add('hidden'), 3000);
+        // Reveal background layers early
+        setTimeout(() => reveal('neighborhoods'), 100);
+        setTimeout(() => reveal('routes'), 300);
+
+        // --- OPTIMIZATION: Start fading overlay WHILE map is still settling ---
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const trainLoader = document.getElementById('train-loading');
+
+        // Wait at least 1s for the zoom to start feeling "smooth" but reveal map before it's totally done
+        setTimeout(() => {
+            if (loadingOverlay) {
+                loadingOverlay.classList.add('fade-out');
+                setTimeout(() => loadingOverlay.style.display = 'none', 800);
             }
-        }
+        }, 1200);
+
+        // Wait for Map to settle 
+        await mapReady;
+        window.startupMetrics.mapReady = performance.now();
+        console.log(`[Metric] Map ready in ${Math.round(window.startupMetrics.mapReady - window.startupMetrics.fetchStart)}ms`);
+
+        // PHASE 3: Synchronized Live Activation
+        if (trainLoader) trainLoader.classList.remove('hidden');
+
+        StatusPanel.log(`[${Math.round(performance.now() - window.startupMetrics.fetchStart)}ms] Syncing Live Data...`);
+        const [scheduleRes] = await Promise.all([dataPromises.schedule, dataPromises.realtime]);
+        window.startupMetrics.liveDataReady = performance.now();
+
+        // Re-render stations with schedule data and fade them in
+        layers.stations.clearLayers();
+        renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
+        reveal('stations');
+
+        // Start Animation
+        StatusPanel.log(`[${Math.round(performance.now() - window.startupMetrics.fetchStart)}ms] Starting Animation...`);
+        if (trainLoader) trainLoader.classList.remove('hidden'); // Ensure spinner is active during heavy scan
+        await startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
+        reveal('trains');
+
+
+        window.startupMetrics.liveAnimationStart = performance.now();
+        console.timeEnd("StartupToLive");
+        console.log("Startup Final Metrics:", window.startupMetrics);
+
+        if (trainLoader) trainLoader.classList.add('hidden');
 
     } catch (err) {
-        // If critical fetch fails (Map Config/Stations)
         console.error("CRITICAL BOOT ERROR:", err);
         alert(`CRITICAL ERROR:\n${err.message}`);
     }

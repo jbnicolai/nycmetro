@@ -21,6 +21,14 @@ export function initMap() {
         renderer: L.canvas({ padding: 0.5, tolerance: 10 })
     });
 
+    // Create Custom Panes for Fade Effects
+    const panes = ['neighborhoods', 'routes', 'stations', 'trains'];
+    panes.forEach((name, i) => {
+        const pane = map.createPane(name + 'Pane');
+        pane.style.zIndex = 400 + (i * 10);
+        pane.classList.add('layer-hidden');
+    });
+
     // Dark Map Style (CartoDB Dark Matter)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -78,7 +86,7 @@ export function initMap() {
                 // Smooth Fly
                 map.flyTo(e.latlng, 15, {
                     animate: true,
-                    duration: 3, // Slower, smoother fly
+                    duration: 1.5, // Faster zoom
                     easeLinearity: 0.1
                 });
                 // Reset Icon
@@ -227,6 +235,7 @@ export async function renderSubwayLines(map, shapes, routes) {
                 smoothFactor: 1.5,
                 lineCap: 'round',
                 lineJoin: 'round',
+                pane: 'routesPane',
                 className: `subway-line-${rid}`
             });
 
