@@ -1,4 +1,4 @@
-
+import { getContrastColor } from './utils.js';
 export let routeGroupsCopy = {}; // Internal state for filtering
 
 export function createLegend(map, layers, fetchCitibikeFn) {
@@ -7,6 +7,7 @@ export function createLegend(map, layers, fetchCitibikeFn) {
 
     fabControl.onAdd = function () {
         const btn = L.DomUtil.create('div', 'legend-fab');
+        btn.id = 'legend-fab-btn'; // Give it an ID to control visibility
         btn.innerHTML = `<svg class="legend-icon" viewBox="0 0 24 24"><path d="M11.99 2.005L21.995 7.002L12 12L2.002 7.002L11.99 2.005ZM3.701 9.692L12 13.842L20.295 9.694L21.995 10.544L12 15.544L2.002 10.544L3.701 9.692ZM3.701 13.233L12 17.383L20.295 13.235L21.995 14.085L12 19.085L2.002 14.085L3.701 13.233Z"></path></svg>`;
 
         // Fix: Prevent double click from zooming map
@@ -15,7 +16,10 @@ export function createLegend(map, layers, fetchCitibikeFn) {
 
         btn.onclick = () => {
             const panel = document.getElementById('legend-panel');
-            if (panel) panel.classList.toggle('visible');
+            if (panel) {
+                panel.classList.add('visible');
+                btn.classList.add('hidden');
+            }
         };
         return btn;
     };
@@ -34,17 +38,17 @@ export function createLegend(map, layers, fetchCitibikeFn) {
     panel.innerHTML = `
         <div class="legend-header-row">
             <span class="legend-title-main">Map Layers</span>
-            <button class="legend-close" aria-label="Close" onclick="document.getElementById('legend-panel').classList.remove('visible')">×</button>
+            <button class="legend-close" aria-label="Close" onclick="document.getElementById('legend-panel').classList.remove('visible'); document.getElementById('legend-fab-btn').classList.remove('hidden');">×</button>
         </div>
         <div class="legend-scroll-area">
             
             <!-- Subway Lines Filter -->
              <div class="legend-section-title">
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <span>Subway Lines</span>
-                    <button id="btn-toggle-tracks" class="btn-master-toggle" style="opacity: 1; color: var(--accent-color);">Hide Tracks</button>
+                <span>Subway Lines</span>
+                <div style="display:flex; gap:8px;">
+                    <button id="btn-toggle-tracks" class="btn-master-toggle">Hide Tracks</button>
+                    <button id="btn-toggle-all" class="btn-master-toggle">Hide All</button>
                 </div>
-                <button id="btn-toggle-all" class="btn-master-toggle">Hide All</button>
             </div>
             <div id="subway-toggles"></div>
 
@@ -82,13 +86,13 @@ export function createLegend(map, layers, fetchCitibikeFn) {
                 if (tracksVisible) {
                     layers.routes.addTo(map);
                     trackBtn.innerText = "Hide Tracks";
-                    trackBtn.style.color = "var(--accent-color)";
-                    trackBtn.style.opacity = "1";
+                    trackBtn.style.color = ""; // Reset to CSS default
+                    trackBtn.style.opacity = "";
                 } else {
                     layers.routes.removeFrom(map);
                     trackBtn.innerText = "Show Tracks";
-                    trackBtn.style.color = "rgba(255,255,255,0.5)";
-                    trackBtn.style.opacity = "0.7";
+                    trackBtn.style.color = "#64748b"; // Dimmed
+                    trackBtn.style.opacity = "";
                 }
             };
         }
@@ -191,16 +195,21 @@ export function updateLegendLines(routes, toggleCallback) {
         const groupRoutes = routeGroupsCopy[color];
         groupRoutes.sort((a, b) => a.short_name.localeCompare(b.short_name));
 
-        const names = groupRoutes.map(r => r.short_name).join(', ');
+        // Generate Badges
+        const badgesHtml = groupRoutes.map(r => {
+            const textColor = getContrastColor(color);
+            return `<span class="station-badge" style="background-color: ${color}; color: ${textColor}; margin-right:4px;">${r.short_name}</span>`;
+        }).join('');
+
         const routeIds = groupRoutes.map(r => r.id);
+        const names = groupRoutes.map(r => r.short_name).join(', '); // For title/aria
 
         const row = document.createElement('div');
         row.className = 'legend-row';
         row.innerHTML = `
             <label class="legend-label">
                 <input type="checkbox" class="legend-checkbox" checked data-color="${color}"> 
-                <span class="legend-swatch" style="background: ${color}"></span> 
-                <span class="route-text">${names}</span>
+                <span class="route-badges" style="display:flex; flex-wrap:wrap; gap:2px;">${badgesHtml}</span>
             </label>
             <button class="btn-focus" title="Show Only ${names}">ONLY</button>
         `;

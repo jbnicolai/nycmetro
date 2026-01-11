@@ -717,7 +717,7 @@ h2 {
 /* Desktop: Floating Popover */
 @media (min-width: 601px) {
     .legend-panel {
-        bottom: 90px;
+        bottom: 30px;
         right: 25px;
         width: 300px;
         max-height: 70vh;
@@ -1504,4 +1504,83 @@ body.rt-error .leaflet-control-container .leaflet-top {
 /* Hide default subway-label if any left */
 .subway-label {
     display: none !important;
+}
+
+/* --- Legend Polish (Button Colors & Layout) --- */
+
+.btn-master-toggle {
+    background: transparent;
+    border: none;
+    /* Muted default color */
+    color: #94a3b8;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.btn-master-toggle:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Specific override for the "Hide Tracks" button to be less neon */
+
+
+/* Fix Header Layout Shift */
+.legend-section-title {
+    /* Ensure flex items don't jump around */
+    min-height: 24px;
+}
+
+/* --- Round 2 Polish (Dimensions & Layout) --- */
+
+@media (min-width: 601px) {
+    .legend-panel {
+        /* Increase vertical height to avoid scroll */
+        max-height: 90vh;
+    }
+}
+
+/* Smaller Master Toggle Buttons */
+.btn-master-toggle {
+    font-size: 0.65rem;
+    /* Smaller font */
+    padding: 2px 6px;
+    /* Tighter padding */
+    letter-spacing: 0.05em;
+}
+
+/* Header Single Line Fix */
+.legend-section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    white-space: nowrap;
+    /* Force single line */
+    gap: 8px;
+    flex-wrap: nowrap;
+}
+
+.legend-section-title>div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* --- FAB Visibility Logic --- */
+.legend-fab {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.legend-fab.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.8);
 }
