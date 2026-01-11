@@ -1,5 +1,4 @@
 
-
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
 import { formatTime } from './utils.js';
@@ -7,8 +6,12 @@ import { formatTime } from './utils.js';
 let activeMarkers = {}; // tripId -> Marker
 let animationFrameId;
 
-// Helper: Seconds to HH:MM:SS (Removed local, using utils)
+// Safe Turf Wrapper
+const turf = window.turf;
 
+/**
+ * Main Entry Point: Start Animation Loop
+ */
 export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
@@ -16,9 +19,9 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
     layers.trains.clearLayers();
     activeMarkers = {};
 
-
-    if (!window.turf) {
+    if (!turf) {
         console.error("Turf.js not found! Animation disabled.");
+        StatusPanel.log("Error: Turf.js missing. Animation stopped.");
         return;
     }
 
@@ -30,241 +33,274 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
     StatusPanel.log("Animation Engine Started.");
     console.log("[Schedule] Starting Real-Time Animation...");
 
-    // Index shapes by route_id
-    const shapesByRoute = {};
-    if (shapes && shapes.features) {
-        shapes.features.forEach(f => {
-            const rid = f.properties.route_id;
-            if (!shapesByRoute[rid]) shapesByRoute[rid] = [];
-            shapesByRoute[rid].push(f);
-        });
-    }
+    // Index shapes directly for faster lookups based on route_id
+    const shapesByRoute = indexShapesByRoute(shapes);
 
-    // Animation Loop
-    let lastLog = 0;
-    let lastLerpLog = 0;
-    let frameCount = 0;
+    // Initial State
     let lastFpsUpdate = 0;
+    let frameCount = 0;
+    let lastLog = 0;
 
     function animate() {
         const now = new Date();
         const nowMs = now.getTime();
 
-        // Calculate seconds since midnight (local time)
-        const secondsSinceMidnight =
-            now.getHours() * 3600 +
-            now.getMinutes() * 60 +
-            now.getSeconds() +
-            now.getMilliseconds() / 1000;
-
-        // Stats Update (Throttled 1s)
+        // Stats: FPS
         frameCount++;
         if (nowMs - lastFpsUpdate >= 1000) {
             StatusPanel.update("fps", frameCount);
-            StatusPanel.update("trains", Object.keys(activeMarkers).length); // Use markers count for active trains
-            StatusPanel.update("time", formatTime(secondsSinceMidnight));
+            StatusPanel.update("trains", Object.keys(activeMarkers).length);
+            // Calculate time of day in seconds
+            const secondsToday = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
+            StatusPanel.update("time", formatTime(secondsToday));
             lastFpsUpdate = nowMs;
             frameCount = 0;
         }
 
-        // 1. Identify Valid Trips
-        const activeTrips = [];
-        const debugRouteIds = Object.keys(schedule.routes);
+        // Calculate time in seconds since midnight (handling ms)
+        // Note: Schedule sometimes goes > 86400 for next-day trips (e.g. 25:00:00)
+        // But our current system mostly just looks at today's window.
+        // We will assume 'now' is the truth for today.
+        const secondsSinceMidnight =
+            (now.getHours() * 3600) +
+            (now.getMinutes() * 60) +
+            now.getSeconds() +
+            (now.getMilliseconds() / 1000);
 
-        debugRouteIds.forEach(routeId => {
-            if (visibilitySet && visibilitySet.has(routeId)) return;
+        // 1. Identify Valid Trips & Update Positions
+        const activeTripIds = new Set();
+
+        // Iterate all routes
+        const routeIds = Object.keys(schedule.routes);
+        for (const routeId of routeIds) {
+            // Check visibility
+            if (visibilitySet && visibilitySet.has(routeId)) continue;
 
             const trips = schedule.routes[routeId];
-            const routeInfo = routes[routeId];
+            const routeInfo = routes[routeId] || { color: '#ffffff', short_name: routeId };
 
-            trips.forEach(trip => {
+            // Optimization: Maybe binary search trips in future? For now, simple loop.
+            for (const trip of trips) {
+                // Optimization: Trip bounds check
                 const stops = trip.stops;
-                if (!stops || stops.length < 2) return;
+                if (!stops || stops.length < 2) continue;
 
-                const startTime = stops[0].time;
-                const endTime = stops[stops.length - 1].time;
-
-                if (secondsSinceMidnight >= startTime && secondsSinceMidnight <= endTime) {
-                    activeTrips.push({ trip, routeId, routeInfo: routeInfo || { color: '#ffffff', short_name: routeId, long_name: 'Unknown' } });
+                // If trip hasn't started or already ended, skip
+                if (secondsSinceMidnight < stops[0].time || secondsSinceMidnight > stops[stops.length - 1].time) {
+                    continue;
                 }
-            });
-        });
 
-        if (nowMs - lastLog > 10000) {
-            StatusPanel.log(`Heartbeat: ${activeTrips.length} Trains active.`);
-            lastLog = nowMs;
+                // It is active!
+                activeTripIds.add(trip.tripId);
+                updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule);
+            }
         }
 
-        // 2. Update Markers
-        const currentTripIds = new Set();
-
-        activeTrips.forEach(({ trip, routeId, routeInfo }) => {
-            currentTripIds.add(trip.tripId);
-
-            // Find current segment
-            let currentStopIndex = -1;
-            for (let i = 0; i < trip.stops.length - 1; i++) {
-                if (secondsSinceMidnight >= trip.stops[i].time && secondsSinceMidnight < trip.stops[i + 1].time) {
-                    currentStopIndex = i;
-                    break;
-                }
+        // 2. Cleanup Old Markers
+        for (const tripId in activeMarkers) {
+            if (!activeTripIds.has(tripId)) {
+                // Train finished or route hidden
+                layers.trains.removeLayer(activeMarkers[tripId]);
+                delete activeMarkers[tripId];
             }
+        }
 
-            if (currentStopIndex === -1) return; // Should not happen given outer check
-
-            const prev = trip.stops[currentStopIndex];
-            const next = trip.stops[currentStopIndex + 1];
-
-            // Interpolate progress (0.0 to 1.0)
-            const duration = next.time - prev.time;
-            const elapsed = secondsSinceMidnight - prev.time;
-            const t = Math.max(0, Math.min(1, elapsed / duration)); // Clamp
-
-            // Verify Stop Data
-            const posA = schedule.stops[prev.id];
-            const posB = schedule.stops[next.id];
-            if (!posA || !posB) return;
-
-            // Cache path for this segment if not already
-            const segmentId = `${prev.id}-${next.id}`;
-            let train = activeMarkers[trip.tripId];
-            if (train && train.segmentId !== segmentId) {
-                // Segment changed, clear cached path
-                train.cachedPath = null;
-                train.cachedLength = 0;
-                train.segmentId = segmentId;
-            } else if (!train) {
-                // New train, initialize
-                train = { segmentId: segmentId, cachedPath: null, cachedLength: 0 };
-            }
-
-            if (!train.cachedPath) {
-                try {
-                    // Try to find a shape that connects these two stops
-                    let bestShape = null;
-                    if (shapesByRoute[routeId]) {
-                        for (const shape of shapesByRoute[routeId]) {
-                            const snapA = window.turf.nearestPointOnLine(shape, window.turf.point([posA[1], posA[0]]));
-                            const snapB = window.turf.nearestPointOnLine(shape, window.turf.point([posB[1], posB[0]]));
-
-                            // If both are reasonably close (increase tolerance to 0.5km)
-                            if (snapA.properties.dist < 0.5 && snapB.properties.dist < 0.5) {
-                                bestShape = shape;
-                                break; // Found a good one
-                            }
-                        }
-                    }
-
-                    if (bestShape) {
-                        const ptA = window.turf.point([posA[1], posA[0]]);
-                        const ptB = window.turf.point([posB[1], posB[0]]);
-                        const sliced = window.turf.lineSlice(ptA, ptB, bestShape);
-
-                        // Fix Direction: Ensure sliced line starts at A and ends at B
-                        const startDist = window.turf.distance(ptA, window.turf.point(sliced.geometry.coordinates[0]));
-                        const endDist = window.turf.distance(ptA, window.turf.point(sliced.geometry.coordinates[sliced.geometry.coordinates.length - 1]));
-
-                        if (endDist < startDist) {
-                            // The line is backwards relative to our direction of travel
-                            sliced.geometry.coordinates.reverse();
-                        }
-
-                        // Simplification removed to prevent jitter
-                        train.cachedPath = sliced;
-                        train.cachedLength = window.turf.length(sliced);
-                    }
-                } catch (e) {
-                    console.warn("Slice failed", e);
-                }
-            }
-
-            // CALCULATE POSITION
-            let lat, lon;
-            const useCached = (train.cachedPath && train.cachedLength > 0);
-
-            if (useCached) {
-                // High Quality: Follow the track
-                const distAlong = t * train.cachedLength;
-                const point = window.turf.along(train.cachedPath, distAlong);
-                lon = point.geometry.coordinates[0];
-                lat = point.geometry.coordinates[1];
-            } else {
-                // Fallback: LERP (Straight Line)
-                if (now.getTime() - lastLerpLog > 10000) { // Rate limit LERP fallback logs
-                    // console.log("Fallback to LERP for", trip.tripId, segmentId);
-                    lastLerpLog = now.getTime();
-                }
-                lon = posA[1] + (posB[1] - posA[1]) * t;
-                lat = posA[0] + (posB[0] - posA[0]) * t;
-            }
-
-            // Helper to get name (Moved from inner scope)
-            const getName = (id) => {
-                const s = schedule.stops[id];
-                return s ? s[2] : id;
-            };
-
-
-
-            const latLng = [lat, lon];
-            let marker = activeMarkers[trip.tripId];
-
-            if (marker) {
-                marker.setLatLng(latLng);
-            } else {
-                const color = routeInfo.color || '#fff';
-                const icon = L.divIcon({
-                    className: 'train-icon',
-                    html: `<div style="background: ${color}; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 6px ${color}; border: 1px solid white;"></div>`,
-                    iconSize: [12, 12]
-                });
-
-                marker = L.marker(latLng, { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
-
-                // Persist cache state to the new marker
-                marker.segmentId = train.segmentId;
-                marker.cachedPath = train.cachedPath;
-                marker.cachedLength = train.cachedLength;
-
-                activeMarkers[trip.tripId] = marker;
-
-                marker.bindPopup(function (layer) {
-                    const d = layer.stopData; // Dynamic data attached to marker
-                    if (!d) return "Loading...";
-                    return `
-                    <div class="train-popup" style="min-width: 200px; font-family: 'Inter', sans-serif;">
-                        <div style="border-bottom: 2px solid ${color}; padding-bottom: 5px; margin-bottom: 5px;">
-                            <strong style="color:${color}; font-size:1.2em;">${routeInfo.short_name} Train</strong>
-                            <div style="font-size:0.8em; color:#888;">To ${getName(trip.stops[trip.stops.length - 1].id)}</div>
-                        </div>
-                        <div style="display:grid; grid-template-columns: 20px 1fr auto; gap:5px; align-items:center; font-size:0.9em;">
-                            <span style="color:#888;">⬇️</span> 
-                            <span>${getName(d.next.id)}</span>
-                            <span style="color:#aaa; font-size:0.85em; font-family:monospace;">${formatTime(d.next.time)}</span>
-
-                            <span style="color:#888; font-size:0.8em;">⬆️</span> 
-                            <span style="color:#666; font-size:0.9em;">${getName(d.prev.id)}</span>
-                            <span style="color:#aaa; font-size:0.85em; font-family:monospace;">${formatTime(d.prev.time)}</span>
-                        </div>
-                    </div>`;
-                });
-            }
-
-            // Always update data for the popup to use
-            marker.stopData = { prev, next };
-        });
-
-        // 3. Remove Old Markers
-        Object.keys(activeMarkers).forEach(tid => {
-            if (!currentTripIds.has(tid)) {
-                layers.trains.removeLayer(activeMarkers[tid]);
-                delete activeMarkers[tid];
-            }
-        });
+        // Heartbeat Log
+        if (nowMs - lastLog > 10000) {
+            // StatusPanel.log(`Active Trains: ${activeTripIds.size}`);
+            lastLog = nowMs;
+        }
 
         animationFrameId = requestAnimationFrame(animate);
     }
 
-    console.log("[Schedule] Starting Real-Time Animation...");
     animate();
+}
+
+/**
+ * Updates a single train's position and marker
+ */
+function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRoute, schedule) {
+    // 1. Find Current Segment
+    // We want the segment [prev, next] such that prev.time <= currentTime < next.time
+    let prev = null;
+    let next = null;
+
+    // Optimization: Store last index on the marker to avoid rescan? 
+    // For now, linear scan is fast enough given small stop counts per trip.
+    for (let i = 0; i < trip.stops.length - 1; i++) {
+        if (currentTime >= trip.stops[i].time && currentTime < trip.stops[i + 1].time) {
+            prev = trip.stops[i];
+            next = trip.stops[i + 1];
+            break;
+        }
+    }
+
+    if (!prev || !next) return; // Should catch by outer bounds check, but just in case
+
+    // 2. Calculate Progress (t)
+    const duration = next.time - prev.time;
+    if (duration <= 0) return; // Zero duration hop?
+    const elapsed = currentTime - prev.time;
+    const t = elapsed / duration;
+
+    // 3. Get Coordinates (Cached Geometry or LERP)
+    const posA = getStopCoords(schedule, prev.id);
+    const posB = getStopCoords(schedule, next.id);
+    if (!posA || !posB) return;
+
+    let lat, lon;
+
+    // Check Cache / Initialize Marker State
+    let marker = activeMarkers[trip.tripId];
+    if (!marker) {
+        marker = createTrainMarker(trip, routeInfo);
+        activeMarkers[trip.tripId] = marker;
+    }
+
+    // Segment ID for caching geometry
+    const segmentId = `${prev.id}-${next.id}`;
+
+    // Has segment data cached?
+    if (marker.segmentId !== segmentId) {
+        // New segment, compute shape
+        marker.segmentId = segmentId;
+        marker.cachedPath = findPathSegment(posA, posB, shapesByRoute[routeId]);
+        marker.cachedLength = marker.cachedPath ? turf.length(marker.cachedPath) : 0;
+
+        // Update popup static info only when segment changes
+        updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule);
+    }
+
+    if (marker.cachedPath && marker.cachedLength > 0) {
+        // Follow Shape
+        const dist = t * marker.cachedLength;
+        const pt = turf.along(marker.cachedPath, dist);
+        [lon, lat] = pt.geometry.coordinates;
+    } else {
+        // Linear Interpolation (Fallback)
+        lat = posA[0] + (posB[0] - posA[0]) * t;
+        lon = posA[1] + (posB[1] - posA[1]) * t;
+    }
+
+    // Move Marker
+    marker.setLatLng([lat, lon]);
+}
+
+/**
+ * Computes the sliced path between two stops using Turf
+ */
+function findPathSegment(posA, posB, availableShapes) {
+    if (!availableShapes || availableShapes.length === 0) return null;
+
+    try {
+        const ptA = turf.point([posA[1], posA[0]]);
+        const ptB = turf.point([posB[1], posB[0]]);
+
+        let bestShape = null;
+        let minDist = Infinity;
+
+        // Optimization: In a real app we might spatial index shapes. 
+        // Here we just scan the route's shapes.
+        for (const shape of availableShapes) {
+            const snapA = turf.nearestPointOnLine(shape, ptA);
+            const snapB = turf.nearestPointOnLine(shape, ptB);
+
+            // Distance from stops to the line
+            const d = snapA.properties.dist + snapB.properties.dist;
+
+            // Threshold: < 0.2km total error preferred
+            if (d < 0.5 && d < minDist) {
+                minDist = d;
+                bestShape = shape;
+            }
+        }
+
+        if (bestShape) {
+            const sliced = turf.lineSlice(ptA, ptB, bestShape);
+            // Ensure directionality (should move away from A)
+            // measure dist from start of slice to A
+            const sliceStart = turf.point(sliced.geometry.coordinates[0]);
+            const distStartToA = turf.distance(sliceStart, ptA);
+            const distStartToB = turf.distance(sliceStart, ptB);
+
+            if (distStartToA > distStartToB) {
+                // It's backwards
+                sliced.geometry.coordinates.reverse();
+            }
+            return sliced;
+        }
+    } catch (e) {
+        // console.warn("Path finding error", e);
+    }
+    return null;
+}
+
+// ------ Helpers ------
+
+function indexShapesByRoute(shapes) {
+    const idx = {};
+    if (shapes && shapes.features) {
+        shapes.features.forEach(f => {
+            const rid = f.properties.route_id;
+            if (!idx[rid]) idx[rid] = [];
+            idx[rid].push(f);
+        });
+    }
+    return idx;
+}
+
+function getStopCoords(schedule, stopId) {
+    const s = schedule.stops[stopId];
+    if (s) return s; // [lat, lon, name]
+    return null;
+}
+
+function createTrainMarker(trip, routeInfo) {
+    const color = routeInfo.color || '#fff';
+    // CSS-based Icon
+    const icon = L.divIcon({
+        className: 'train-icon',
+        html: `<div style="
+            background: ${color}; 
+            width: 10px; 
+            height: 10px; 
+            border-radius: 50%; 
+            box-shadow: 0 0 4px ${color}; 
+            border: 1.5px solid white;"></div>`,
+        iconSize: [10, 10]
+    });
+
+    const marker = L.marker([0, 0], { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
+    return marker;
+}
+
+function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule) {
+    const getName = (id) => {
+        const s = schedule.stops[id];
+        return s ? s[2] : id;
+    };
+
+    const color = routeInfo.color || '#333';
+    const destName = getName(trip.stops[trip.stops.length - 1].id);
+
+    // We only create the popup content once per segment change to avoid string thrashing every frame
+    const content = `
+    <div class="train-popup" style="min-width: 180px; font-family: 'Inter', sans-serif;">
+        <div style="border-bottom: 3px solid ${color}; padding-bottom: 4px; margin-bottom: 8px;">
+            <strong style="color:${color}; font-size:1.1em;">${routeInfo.short_name} Train</strong>
+            <div style="font-size:0.85em; color:#64748b;">To ${destName}</div>
+        </div>
+        <div style="display:grid; grid-template-columns: 20px 1fr auto; gap:6px; align-items:center; font-size:0.9em;">
+            <span style="color:#64748b;">⬇️</span> 
+            <span>${getName(next.id)}</span>
+            <span style="color:#94a3b8; font-size:0.85em; font-family:monospace;">${formatTime(next.time)}</span>
+
+            <span style="color:#64748b; font-size:0.8em;">⬆️</span> 
+            <span style="color:#94a3b8; font-size:0.9em;">${getName(prev.id)}</span>
+            <span style="color:#94a3b8; font-size:0.85em; font-family:monospace;">${formatTime(prev.time)}</span>
+        </div>
+    </div>`;
+
+    marker.bindPopup(content);
 }
