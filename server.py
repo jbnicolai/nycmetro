@@ -137,10 +137,14 @@ def fetch_realtime_feed():
         return None
 
     # Fetch all in parallel
+    print(f"Fetching {len(FEED_URLS)} feeds in parallel...", flush=True)
     with ThreadPoolExecutor(max_workers=len(FEED_URLS)) as executor:
         contents = list(executor.map(fetch_one, FEED_URLS))
 
-    for content in contents:
+    success_count = sum(1 for c in contents if c)
+    print(f"Fetched {success_count} feeds successfully.", flush=True)
+
+    for url, content in zip(FEED_URLS, contents):
         if not content: continue
         
         try:
@@ -148,16 +152,17 @@ def fetch_realtime_feed():
             feed.ParseFromString(content)
             
             # Use global to limit log spam
-            global logged_rt_ids
-            if 'logged_rt_ids' not in globals(): logged_rt_ids = 0
+            global logged_count_per_feed
+            if 'logged_count_per_feed' not in globals(): logged_count_per_feed = {}
+            feed_name = url.split('%2F')[-1]
+            if feed_name not in logged_count_per_feed: logged_count_per_feed[feed_name] = 0
 
-            # Process Alerts
+            # Process Updates
             for entity in feed.entity:
                 if entity.HasField('alert'):
                     alert = entity.alert
                     header_text = alert.header_text.translation[0].text if alert.header_text.translation else "Alert"
                     desc_text = alert.description_text.translation[0].text if alert.description_text.translation else ""
-                    
                     affected_routes = [sel.route_id for sel in alert.informed_entity if sel.route_id]
                     
                     collected_alerts.append({
@@ -167,7 +172,6 @@ def fetch_realtime_feed():
                         "routes": list(set(affected_routes))
                     })
 
-                # Process Trip Updates
                 if entity.HasField('trip_update'):
                     tu = entity.trip_update
                     if tu.stop_time_update:
@@ -180,8 +184,10 @@ def fetch_realtime_feed():
                             "time": stu.arrival.time or stu.departure.time
                         })
         except Exception as e:
-            print(f"Error parsing feed content: {e}")
+            print(f"Error parsing feed content: {e}", flush=True)
 
+    print(f"Processed {len(trips)} RT trips and {len(collected_alerts)} alerts.", flush=True)
+    
     # Update Global Alerts Cache
     with alerts_lock:
         ALERTS_CACHE[:] = collected_alerts
@@ -342,7 +348,7 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
 
             with RT_LOCK:
                 if not RT_CACHE['data'] or (now_ts - RT_CACHE['last_updated'] > 30):
-                    print("Refreshing Realtime Data...")
+                    print(f"Refreshing Realtime Data... (Cached: {bool(RT_CACHE['data'])}, Age: {now_ts - RT_CACHE['last_updated']:.1f}s)", flush=True)
                     try:
                         new_data = fetch_realtime_feed()
                         # Only update if we got *some* data (simple safety)
@@ -350,7 +356,7 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
                             RT_CACHE['data'] = new_data
                             RT_CACHE['last_updated'] = now_ts
                     except Exception as e:
-                        print(f"Global RT Fetch Error: {e}")
+                        print(f"Global RT Fetch Error: {e}", flush=True)
             
             response_data = {
                 "updated": RT_CACHE['last_updated'],
