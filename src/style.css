@@ -419,16 +419,89 @@ h2 {
     text-align: center;
 }
 
+/* Station Body: Unified Scroll Container */
 .station-body {
     padding: 16px;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+    /* Unified scroll: Max height on body instead of lists */
+    /* Only apply max-height if content is very long, or let Leaflet handle it? */
+    /* User request: "Do not show scroll by default until load more is actioned" */
+    /* We'll set a max-height but it won't trigger until expanded */
+    max-height: 320px;
+    overflow-y: auto;
 }
 
-.station-dir-col {
-    display: flex;
-    flex-direction: column;
+/* Custom Scrollbar for Body */
+.station-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.station-body::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.station-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.station-scroll-list {
+    /* Remove per-list scrolling */
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
+    margin-right: 0;
+}
+
+.show-more-btn {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    font-size: 0.75rem;
+    padding: 6px;
+    margin-top: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.show-more-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.hidden-train-row {
+    display: none !important;
+}
+
+.departed-row {
+    opacity: 0.4;
+    font-style: italic;
+    pointer-events: none;
+    /* Make less prominent */
+}
+
+.status-departing {
+    color: #f59e0b;
+    /* Amber */
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+
+    100% {
+        opacity: 1;
+    }
 }
 
 .dir-header {
