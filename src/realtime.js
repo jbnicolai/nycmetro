@@ -1,3 +1,5 @@
+import { normId } from './utils.js';
+
 /**
  * Real-Time Data Manager
  * Handles polling /api/realtime and managing application state.
@@ -9,10 +11,12 @@ export const rtState = {
     trips: new Map(), // Map<tripId, { status: "STOPPED_AT"|"IN_TRANSIT_TO", stopId, time, timestamp }>
     fuzzyTrips: new Map(), // Map<Time_Route_Dir, TripObject>
     tripGroups: new Map(), // Map<Route_Dir, Array<{startTime, tripData}>>
+    rtRouteIds: new Set(), // Track which routes have live data
+    rtToSchedMatches: new Map(), // Added for ID mapping
     hasError: false
 };
 
-const INTERVAL_MS = 30000;
+const INTERVAL_MS = 60000;
 let pollTimeout;
 
 export async function initRealtime() {
@@ -50,12 +54,15 @@ async function fetchRealtimeData() {
         rtState.trips.clear();
         rtState.fuzzyTrips.clear();
         rtState.tripGroups.clear();
+        rtState.rtRouteIds.clear();
 
         if (data.trips && Array.isArray(data.trips)) {
             data.trips.forEach(t => {
                 // Strict Match
-                const tripData = { ...t, timestamp: Date.now() };
+                const routeId = normId(t.routeId);
+                const tripData = { ...t, routeId, timestamp: Date.now() };
                 rtState.trips.set(t.tripId, tripData);
+                if (routeId) rtState.rtRouteIds.add(routeId);
 
                 // Fuzzy Match & Grouping
                 // tripId expected format: [TIME]_[ROUTE]..[DIR][VARIANT]
@@ -96,8 +103,8 @@ async function fetchRealtimeData() {
         console.error("[Realtime] Fetch Failed:", e);
         rtState.hasError = true;
         rtState.mode = 'SCHEDULE_FALLBACK';
+        rtState.rtRouteIds.clear(); // Ensure total fallback
         updateUI(false);
-
     }
 }
 
@@ -127,7 +134,7 @@ export function getMatchingTrip(tripId, routeId) {
             const group = rtState.tripGroups.get(groupKey);
             if (group) {
                 let best = null;
-                let minDiff = 600; // 10 mins (NYC headways are often 8-12m)
+                let minDiff = 300; // 5 mins (NYC headways are often 8-12m)
 
                 for (const rtTrip of group) {
                     const diff = Math.abs(rtTrip.startTime - schedStart);
@@ -157,4 +164,11 @@ function updateUI(isHealthy) {
         banner.textContent = "Live Data Unavailable — Showing Scheduled Times";
         document.body.classList.add('rt-error');
     }
+}
+export function getScheduledIdForRt(rtId) {
+    return rtState.rtToSchedMatches.get(rtId);
+}
+
+export function registerMatch(rtId, schedId) {
+    rtState.rtToSchedMatches.set(rtId, schedId);
 }
