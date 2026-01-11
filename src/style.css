@@ -245,120 +245,258 @@ h2 {
     border-radius: 2px;
 }
 
-/* Legend Control */
-.legend-control {
+/* Legend FAB (Floating Action Button) */
+.legend-fab {
+    position: absolute;
+    bottom: 25px;
+    right: 25px;
+    width: 56px;
+    height: 56px;
     background: var(--sidebar-bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    padding: 0;
-    /* Padding moved to content/header */
+    border-radius: 50%;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s;
     color: var(--text-color);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-    min-width: 200px;
-    font-family: var(--font-family);
-    overflow: hidden;
-    /* For rounded corners on collapse */
-    transition: max-height 0.3s ease;
-    z-index: 1000 !important;
-    /* Ensure it floats above map tiles */
 }
 
-@media (max-width: 600px) {
-    .legend-control {
-        position: absolute !important;
-        bottom: 30px !important;
-        /* Move up to avoid Status Panel if they are both bottom */
-        right: 10px !important;
-        max-width: 200px;
-        margin-bottom: 0 !important;
+.legend-fab:hover {
+    transform: scale(1.05);
+    background: rgba(30, 41, 59, 0.9);
+}
+
+.legend-fab:active {
+    transform: scale(0.95);
+}
+
+.legend-icon {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+}
+
+/* Legend Panel (Responsive) */
+.legend-panel {
+    position: absolute;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--sidebar-border);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.legend-panel.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Desktop: Floating Popover */
+@media (min-width: 601px) {
+    .legend-panel {
+        bottom: 90px;
+        right: 25px;
+        width: 300px;
+        max-height: 70vh;
+        border-radius: 16px;
+        transform: translateY(20px) scale(0.95);
+        transform-origin: bottom right;
+    }
+
+    .legend-panel.visible {
+        transform: translateY(0) scale(1);
     }
 }
 
-.legend-header {
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid var(--sidebar-border);
+/* Mobile: Bottom Sheet */
+@media (max-width: 600px) {
+    .legend-fab {
+        bottom: 20px;
+        right: 20px;
+    }
+
+    .legend-panel {
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        max-height: 85dvh;
+        border-radius: 20px 20px 0 0;
+        border-bottom: none;
+        border-left: none;
+        border-right: none;
+        transform: translateY(100%);
+    }
+
+    .legend-panel.visible {
+        transform: translateY(0);
+    }
+}
+
+.legend-header-row {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.9rem;
+    background: rgba(255, 255, 255, 0.02);
 }
 
-.legend-header:hover {
-    background: rgba(255, 255, 255, 0.1);
+.legend-title-main {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #f1f5f9;
 }
 
-.legend-toggle {
+.legend-close {
     background: none;
     border: none;
-    color: inherit;
-    font-weight: bold;
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 0 4px;
-}
-
-.legend-content {
-    padding: 16px;
-}
-
-.legend-control.collapsed {
-    width: auto;
-    min-width: 150px;
-}
-
-.legend-control.collapsed .legend-header {
-    border-bottom: none;
-}
-
-
-.legend-section {
-    margin-bottom: 12px;
-}
-
-.legend-section:last-child {
-    margin-bottom: 0;
-}
-
-.legend-title {
-    font-weight: 600;
-    font-size: 0.85rem;
-    margin-bottom: 8px;
     color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 5px;
+    line-height: 1;
 }
 
-.legend-item {
+.legend-scroll-area {
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+.legend-section-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin-bottom: 12px;
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.legend-section-title:first-child {
+    margin-top: 0;
+}
+
+/* Custom Checkbox Row */
+.legend-row {
     display: flex;
     align-items: center;
-    margin-bottom: 6px;
-    cursor: pointer;
-    font-size: 0.9rem;
+    justify-content: space-between;
+    padding: 8px 0;
 }
 
-.legend-item input {
-    margin-right: 8px;
-    accent-color: var(--accent-color);
+.legend-label {
+    display: flex;
+    align-items: center;
     cursor: pointer;
+    flex: 1;
+    /* Clicks anywhere on text/checkbox */
 }
 
-.color-swatch {
-    width: 12px;
-    height: 12px;
+.legend-checkbox {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #475569;
+    border-radius: 4px;
+    margin-right: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.legend-checkbox:checked {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.legend-checkbox:checked::after {
+    content: '✔';
+    font-size: 12px;
+    color: #000;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.legend-swatch {
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    margin-right: 8px;
+    margin-right: 10px;
     display: inline-block;
 }
 
-.subway-swatch {
-    width: 20px;
-    height: 4px;
-    border-radius: 2px;
+.route-text {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: #e2e8f0;
+}
+
+/* Focus Button */
+.btn-focus {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-left: 10px;
+    transition: all 0.2s;
+    opacity: 0;
+    /* Hidden by default until hover */
+    transform: translateX(5px);
+}
+
+.legend-row:hover .btn-focus {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Always show focus button on mobile (no hover state) */
+@media (max-width: 600px) {
+    .btn-focus {
+        opacity: 1;
+        transform: none;
+        padding: 6px 10px;
+        /* Larger hit area */
+        background: rgba(255, 255, 255, 0.05);
+    }
+}
+
+.btn-focus:hover {
+    background: rgba(56, 189, 248, 0.2);
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+/* Master Toggle Button */
+.btn-master-toggle {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
 }
 
 /* User Location Pulse */
