@@ -4,3 +4,5 @@ __pycache__/
 frontend_debug.log
 data/gtfs/
 data/google_transit.zip
+*.log
+debug_ids.txt
