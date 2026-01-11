@@ -12,6 +12,10 @@ COPY src/ ./src/
 COPY data/ ./data/
 COPY scripts/ ./scripts/
 
+# Install Dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Ensure data directory exists and has permissions
 RUN mkdir -p data/gtfs
 

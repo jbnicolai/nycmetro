@@ -2,16 +2,26 @@ import http.server
 import socketserver
 import json
 import os
+import random
 import gzip
 from urllib.parse import urlparse
-
-
 import datetime
+import requests
+from google.transit import gtfs_realtime_pb2
+from threading import Lock
 
 PORT = int(os.environ.get('PORT', 8001))
 DATA_FILE = "data/subway_config.json"
 SCHEDULE_FILE = "data/subway_schedule.json"
 ENV = os.environ.get('ENV', 'development')
+ENV = os.environ.get('ENV', 'development')
+
+# --- Realtime Cache ---
+RT_CACHE = {
+    "data": None,
+    "last_updated": 0
+}
+RT_LOCK = Lock()
 
 # Load schedule into memory
 SCHEDULE_CACHE = None
@@ -20,9 +30,82 @@ if os.path.exists(SCHEDULE_FILE):
     try:
         with open(SCHEDULE_FILE, 'r') as f:
             SCHEDULE_CACHE = json.load(f)
-        print("Schedule loaded successfully.")
+        
+        # Normalize Trip IDs (Strip prefix to match GTFS-RT)
+        # Static:  "AFA25GEN-1093-Weekday-00_000650_1..S03R"
+        # Realtime: "000650_1..S03R"
+        print("Normalizing Trip IDs...")
+        count = 0
+        for rid, trips in SCHEDULE_CACHE.get('routes', {}).items():
+            for trip in trips:
+                original = trip.get('tripId', "")
+                parts = original.split('_')
+                if len(parts) >= 2:
+                    # Keep last 2 parts (Time + RouteDir)
+                    trip['tripId'] = "_".join(parts[-2:])
+                    count += 1
+        print(f"Schedule loaded and normalized {count} IDs successfully.")
+
     except Exception as e:
         print(f"Failed to load schedule: {e}")
+
+def fetch_realtime_feed():
+    """Fetches and parses GTFS-RT feed from MTA."""
+    FEED_URLS = [
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",      # 1-7
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",  # A/C/E
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw", # N/Q/R/W
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm", # B/D/F/M
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",    # L
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g"     # G
+    ]
+    
+    headers = {}
+    # Add User-Agent to look like a browser/legit client
+    headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+    
+    trips = []
+    
+    for url in FEED_URLS:
+        try:
+            resp = requests.get(url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                feed = gtfs_realtime_pb2.FeedMessage()
+                feed.ParseFromString(resp.content)
+                # Debug: Print sample RT Trip IDs
+                # Always print the first few to debug
+                if 'logged_rt_ids' not in globals():
+                     global logged_rt_ids
+                     logged_rt_ids = 0
+                
+                if logged_rt_ids < 5 and len(feed.entity) > 0:
+                     for entity in feed.entity[:3]:
+                        if entity.HasField('trip_update'):
+                             print(f"[DEBUG-RT-ID] {entity.trip_update.trip.trip_id}", flush=True)
+                             logged_rt_ids += 1
+
+                for entity in feed.entity:
+                    if entity.HasField('trip_update'):
+                        tu = entity.trip_update
+                        trip_id = tu.trip.trip_id
+                        route_id = tu.trip.route_id
+                        
+                        # Find current status (first stop time update)
+                        if tu.stop_time_update:
+                            stu = tu.stop_time_update[0]
+                            trips.append({
+                                "tripId": trip_id,
+                                "routeId": route_id,
+                                "stopId": stu.stop_id,
+                                "status": "STOPPED_AT" if not stu.arrival.time else "IN_TRANSIT_TO",
+                                "time": stu.arrival.time or stu.departure.time
+                            })
+        except Exception as e:
+            print(f"Error fetching feed {url}: {e}")
+            # Continue to next feed even if one fails
+            continue
+            
+    return trips
 
 class MyHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -99,6 +182,17 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
                 # Handle wraparound for late night (if near 24h, schedule might go > 86400)
                 # For simplicity, we just filter. Ideally we handle day overlap.
                 
+                # Determine Service ID based on NYC Time
+                dow = now.weekday() # 0=Mon, 5=Sat, 6=Sun
+                if dow == 5:
+                    target_service = "Saturday"
+                elif dow == 6:
+                    target_service = "Sunday"
+                else:
+                    target_service = "Weekday"
+                
+                print(f"Loading Schedule for {target_service} (DOW: {dow})", flush=True)
+
                 filtered_routes = {}
                 active_trips_count = 0
                 
@@ -106,6 +200,10 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
                 for route_id, trips in SCHEDULE_CACHE.get('routes', {}).items():
                     filtered_trips = []
                     for trip in trips:
+                        # Check Service ID
+                        if trip.get('serviceId') != target_service:
+                            continue
+
                         stops = trip.get('stops', [])
                         if not stops: continue
                         
@@ -119,6 +217,8 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
                     if filtered_trips:
                         filtered_routes[route_id] = filtered_trips
                         active_trips_count += len(filtered_trips)
+                
+                print(f"Server returning {active_trips_count} trips.", flush=True)
                 
                 response_data = {
                     'routes': filtered_routes,
@@ -144,6 +244,39 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
                  self.send_response(500)
                  self.end_headers()
                  self.wfile.write(b'{"error": "Schedule not loaded"}')
+
+        elif parsed_path == '/api/realtime':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            
+            # Simple Caching (30s)
+            now_ts = datetime.datetime.now().timestamp()
+            
+            # Check Config - permissive (try without key)
+            # if not MTA_API_KEY: ... (Removed to allow keyless access)
+
+            with RT_LOCK:
+                if not RT_CACHE['data'] or (now_ts - RT_CACHE['last_updated'] > 30):
+                    print("Refreshing Realtime Data...")
+                    try:
+                        new_data = fetch_realtime_feed()
+                        # Only update if we got *some* data (simple safety)
+                        if new_data: 
+                            RT_CACHE['data'] = new_data
+                            RT_CACHE['last_updated'] = now_ts
+                    except Exception as e:
+                        print(f"Global RT Fetch Error: {e}")
+            
+            response_data = {
+                "updated": RT_CACHE['last_updated'],
+                "trips": RT_CACHE['data'] or []
+            }
+            
+            content = json.dumps(response_data).encode('utf-8')
+            self.send_header('Content-Length', str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+            
         else:
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
 

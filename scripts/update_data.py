@@ -20,7 +20,8 @@ SCHEDULE_FILE = os.path.join(DATA_DIR, "subway_schedule.json")
 
 # Constants
 CACHE_DURATION = 3600  # 1 hour
-SERVICE_ID = "Weekday" # Default service ID for schedule generation
+CACHE_DURATION = 3600  # 1 hour
+TARGET_SERVICES = ["Weekday", "Saturday", "Sunday"] # Process all common schedules
 
 def ensure_dirs():
     if not os.path.exists(DATA_DIR):
@@ -149,7 +150,7 @@ def parse_time(t_str):
 
 def process_schedule_data():
     """Generates subway_schedule.json (Stop Times)"""
-    print(f"Processing Schedule Data (Service: {SERVICE_ID})...")
+    print(f"Processing Schedule Data (Services: {TARGET_SERVICES})...")
     
     trips = {} # trip_id -> { route_id, direction, stops: [] }
     
@@ -157,14 +158,15 @@ def process_schedule_data():
     with open(os.path.join(GTFS_DIR, 'trips.txt'), 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if row['service_id'] == SERVICE_ID:
+            if row['service_id'] in TARGET_SERVICES:
                 trips[row['trip_id']] = {
                     "route": row['route_id'],
                     "dir": row['direction_id'],
+                    "serviceId": row['service_id'],
                     "stops": []
                 }
     
-    print(f"Found {len(trips)} trips for {SERVICE_ID}.")
+    print(f"Found {len(trips)} trips.")
 
     # 2. Get stop times
     print("Loading stop times (this might take a moment)...")
@@ -207,6 +209,7 @@ def process_schedule_data():
         routes[info['route']].append({
             "tripId": tid,
             "dir": info['dir'],
+            "serviceId": info['serviceId'],
             "stops": info['stops']
         })
 
