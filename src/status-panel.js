@@ -92,7 +92,7 @@ export const StatusPanel = {
     update(key, value) {
         const el = document.getElementById(`status-${key}`);
         if (el) {
-            el.textContent = value;
+            el.innerHTML = value;
         } else {
             console.warn(`[StatusPanel] Missing element for key: ${key}`);
         }

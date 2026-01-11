@@ -16,7 +16,8 @@ export function initMap() {
         zoom: 12, // Starting zoom
         minZoom: 11,
         maxZoom: 18,
-        zoomControl: false // We'll add it top-right if needed, or stick to default top-left
+        zoomControl: false,
+        preferCanvas: true
     });
 
     // Dark Map Style (CartoDB Dark Matter)
@@ -147,13 +148,7 @@ const COLOR_OFFSETS = {
     '#FCCC0A': 0.01   // Yellow (N,Q,R,W)
 };
 
-export function renderSubwayLines(map, shapes, routes) {
-    console.log("[Map] renderSubwayLines called with:", {
-        shapesType: shapes ? shapes.type : 'undefined',
-        features: shapes ? shapes.features?.length : 0,
-        routesCount: routes ? Object.keys(routes).length : 0
-    });
-
+export async function renderSubwayLines(map, shapes, routes) {
     if (!shapes || !routes) {
         console.error("[Map] Aborting render: Missing shapes or routes.");
         return;
@@ -163,107 +158,83 @@ export function renderSubwayLines(map, shapes, routes) {
     Object.values(layers.routeLayers).forEach(l => layers.routes.removeLayer(l));
     layers.routeLayers = {};
 
-    // 1. Generate Visual Offsets
+    const turf = window.turf;
     const offsetFeatures = [];
-    const turf = window.turf; // Local reference
 
-    if (turf) {
-        shapes.features.forEach(f => {
-            let candidate = f;
+    // 1. Process Offsets & Validate (Bulk)
+    console.time("ProcessLines");
+    for (let i = 0; i < shapes.features.length; i++) {
+        const f = shapes.features[i];
+        let candidate = f;
+        const color = f.properties.color;
+        const offset = COLOR_OFFSETS[color] || 0;
+
+        if (turf && Math.abs(offset) > 0) {
             try {
-                const color = f.properties.color;
-                const offset = COLOR_OFFSETS[color] || 0;
-
-                if (Math.abs(offset) > 0) {
-                    // Try Turf offset
-                    try {
-                        const offsetLine = turf.lineOffset(f, offset, { units: 'kilometers' });
-                        if (offsetLine && validateCoords(offsetLine.geometry.coordinates)) {
-                            // Copy properties and use this line
-                            offsetLine.properties = f.properties;
-                            candidate = offsetLine;
-                        }
-                    } catch (turfErr) {
-                        // Turf failed (geometry errors?), fall back to original
-                    }
+                const offsetLine = turf.lineOffset(f, offset, { units: 'kilometers' });
+                if (offsetLine && validateCoords(offsetLine.geometry.coordinates)) {
+                    offsetLine.properties = f.properties;
+                    candidate = offsetLine;
                 }
-            } catch (err) {
-                console.warn("Offset calculation failed", err);
-            }
-
-            // Safety Check
-            if (validateCoords(candidate.geometry.coordinates)) {
-                offsetFeatures.push(candidate);
-            }
-        });
-    } else {
-        // Fallback if Turf missing
-        console.warn("Turf.js not active. Rendering raw shapes.");
-        shapes.features.forEach(f => {
-            if (validateCoords(f.geometry.coordinates)) {
-                offsetFeatures.push(f);
-            }
-        });
-    }
-
-    // 2. Render Individually
-    console.log(`[Map] Rendering ${offsetFeatures.length} features.`);
-    let errorCount = 0;
-
-    // Sort features to ensure consistent layering (e.g. by color or random)
-    // This helps slightly with z-fighting if no offsets
-    offsetFeatures.sort((a, b) => a.properties.color.localeCompare(b.properties.color));
-
-    offsetFeatures.forEach(feature => {
-        try {
-            const rid = feature.properties.route_id;
-            const color = routes[rid] ? routes[rid].color : '#666';
-
-            // "Creative" Rendering: 
-            // 1. Varied widths based on offset direction to create "border" effect if overlapping
-            // 2. Use map panes if we were really fancy, but simple path options work
-
-            const lineLayer = L.geoJSON(feature, {
-                style: {
-                    color: color,
-                    weight: 3,
-                    opacity: 0.8,
-                    lineCap: 'round',
-                    lineJoin: 'round',
-                    className: `subway-line-${rid}`
-                },
-                onEachFeature: (feature, layer) => {
-                    layer.bindPopup(`Line ${feature.properties.route_id}`);
-                }
-            });
-
-            if (!layers.routeLayers[rid]) {
-                layers.routeLayers[rid] = L.layerGroup();
-            }
-            lineLayer.addTo(layers.routeLayers[rid]);
-        } catch (err) {
-            errorCount++;
-            console.warn("Failed to render feature:", feature.properties.route_id, err);
+            } catch (e) { /* Fallback */ }
         }
+
+        if (validateCoords(candidate.geometry.coordinates)) {
+            offsetFeatures.push(candidate);
+        }
+
+        // Yield to UI every 100 features to prevent long freeze on mobile
+        if (i % 100 === 0) await new Promise(r => requestAnimationFrame(r));
+    }
+    console.timeEnd("ProcessLines");
+
+    // 2. Render to Map
+    console.log(`[Map] Rendering ${offsetFeatures.length} features.`);
+
+    // Group segments by route for single-layer efficiency if possible
+    // But we use routeLayers for individual toggling.
+    const segmentsByRoute = {};
+    offsetFeatures.forEach(f => {
+        const rid = f.properties.route_id;
+        if (!segmentsByRoute[rid]) segmentsByRoute[rid] = [];
+        segmentsByRoute[rid].push(f);
     });
 
-    if (errorCount > 0) {
-        console.error(`Skipped ${errorCount} corrupted line segments.`);
+    for (const [rid, segments] of Object.entries(segmentsByRoute)) {
+        const color = routes[rid] ? routes[rid].color : '#666';
+        const routeGroup = L.layerGroup();
+
+        segments.forEach(f => {
+            // Leaflet Polyline uses [lat, lon], GeoJSON uses [lon, lat]
+            // Turf output is GeoJSON [lon, lat]. L.Polyline.fromGeoJSON or manual flip.
+            // L.polyline helper:
+            const latlngs = f.geometry.coordinates.map(c => [c[1], c[0]]);
+
+            const poly = L.polyline(latlngs, {
+                color: color,
+                weight: 3,
+                opacity: 0.8,
+                smoothFactor: 1.5, // Optimization for high zoom
+                lineCap: 'round',
+                lineJoin: 'round',
+                className: `subway-line-${rid}`
+            });
+
+            poly.bindPopup(`Line ${rid}`);
+            poly.addTo(routeGroup);
+        });
+
+        layers.routeLayers[rid] = routeGroup;
+        routeGroup.addTo(layers.routes);
+
+        // Yield every few routes
+        await new Promise(r => requestAnimationFrame(r));
     }
 
-    // Finally, add all route groups to the main map layer
-    const count = Object.keys(layers.routeLayers).length;
-    Object.values(layers.routeLayers).forEach(layer => layer.addTo(layers.routes));
-
-    // SAFETY: Ensure main layer is on map
     if (!map.hasLayer(layers.routes)) {
         layers.routes.addTo(map);
-        console.log("[Map] Re-added main routes layer to map.");
     }
 
-    console.log(`[Map] Rendered ${count} route layers to the map.`);
-
-    // RETURN the modified shapes so animation can snap to them
     return {
         type: 'FeatureCollection',
         features: offsetFeatures

@@ -117,7 +117,7 @@ async function runApp() {
         let renderedShapes = config.shapes; // Fallback
         try {
             console.log("Rendering Subway Lines...");
-            const result = renderSubwayLines(map, config.shapes, config.routes);
+            const result = await renderSubwayLines(map, config.shapes, config.routes);
             if (result) renderedShapes = result;
         } catch (e) {
             console.error("Line Rendering Failed:", e);
