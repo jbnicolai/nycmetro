@@ -1,8 +1,15 @@
 import { parseProperties, formatTime, getDelayInSeconds } from './utils.js';
 import { rtState, getMatchingTrip } from './realtime.js';
 import { getActiveAlerts } from './alerts.js';
+import { renderRouteBadge, renderStatusBadge } from './ui.js';
 
-let stationScheduleIndex = null;
+// ... (imports)
+
+// Remove local getContrastColor helper (lines 114-123)
+
+// ...
+
+export let stationScheduleIndex = null;
 let rawSchedule = null;
 // Store markers for jumping
 const stationMarkers = new Map();
@@ -363,70 +370,35 @@ function showStationPopup(features, layer) {
     if (dataFound) {
         const renderRow = (t) => {
             const routeId = t.routeId;
-            const color = routeConfigs[routeId] ? routeConfigs[routeId].color : '#666';
-            const textColor = getContrastColor(color);
+            const config = routeConfigs[routeId];
+            const badgeHtml = renderRouteBadge(routeId, config);
 
-            // Real-Time Logic
-            let displayTime = t.predictedTime; // Use predicted
+            // 2. Status
             let statusBadge = "";
+            let displayTime = t.predictedTime;
 
             if (t.isLive) {
-                // Check if stopped at current station
                 const rt = t.rt;
                 const isAtStation = Array.from(stopIds).some(baseId => rt.stopId.startsWith(baseId));
-
-                // GTFS Realtime Status: 0=INCOMING_AT, 1=STOPPED_AT, 2=IN_TRANSIT_TO
-                // We only show "At Station" if status is STOPPED_AT (1).
-                // If implied or missing, we assume STOPPED_AT only if very close match, but let's rely on status if present.
-                // Note: The API might return string "STOPPED_AT" or int 1. Check both or standard.
-                // Assuming our backend passes the raw string or mapped string.
-
                 const isStopped = rt.currentStatus === 'STOPPED_AT' || rt.currentStatus === 1;
+                const delayMins = Math.round((t.predictedTime - t.time) / 60);
 
-                if (isAtStation && isStopped) {
-                    statusBadge = `<span class="status-badge status-at-station">● At Station</span>`;
-                } else if (isAtStation) {
-                    // It is 'at' the station in terms of next update, but moving (INCOMING or IN_TRANSIT)
-                    // Only show "Approaching" if actually close (e.g. within 2 mins)
-                    const minsAway = (t.predictedTime - t.time) / 60;
-                    if (Math.abs(minsAway) <= 2) {
-                        statusBadge = `<span class="status-badge status-live">Approaching</span>`;
-                    } else {
-                        // Fallback to normal delay calc if it says "At Station" but time is far off (ghost train scenario)
-                        const delayMins = Math.round(minsAway);
-                        let delayText = "Live";
-                        if (delayMins > 2) {
-                            delayText = `+${delayMins} min`;
-                            statusBadge = `<span class="status-badge status-delayed">${delayText}</span>`;
-                        } else if (delayMins < -2) {
-                            delayText = `${delayMins} min`;
-                            statusBadge = `<span class="status-badge status-live">${delayText}</span>`;
-                        } else {
-                            statusBadge = `<span class="status-badge status-live">Live</span>`;
-                        }
-                    }
-                } else {
-                    const delayMins = Math.round((t.predictedTime - t.time) / 60);
-                    let delayText = "Live";
-                    // let delayColorClass = "status-live"; 
-
-                    if (delayMins > 2) {
-                        delayText = `+${delayMins} min`;
-                        statusBadge = `<span class="status-badge status-delayed">${delayText}</span>`;
-                    } else if (delayMins < -2) {
-                        delayText = `${delayMins} min`;
-                        statusBadge = `<span class="status-badge status-live">${delayText}</span>`;
-                    } else {
-                        statusBadge = `<span class="status-badge status-live">Live</span>`;
-                    }
+                let effectiveAtStation = false;
+                if (isAtStation) {
+                    if (isStopped) effectiveAtStation = true;
+                    else if (Math.abs((t.predictedTime - t.time) / 60) <= 2) effectiveAtStation = true;
                 }
+
+                statusBadge = renderStatusBadge(t.isLive, delayMins, effectiveAtStation, isStopped);
+
             } else {
-                statusBadge = `<span class="status-badge status-scheduled">Scheduled</span>`;
+                statusBadge = renderStatusBadge(false, 0, false, false);
             }
+
             return `
             <div class="arrival-row clickable-row" onclick="window.flyToTrain('${t.tripId}')">
                 <div class="arrival-left">
-                    <span class="station-badge" style="background-color: ${color}; color: ${textColor};">${routeId}</span>
+                    ${badgeHtml}
                     ${statusBadge}
                 </div>
                 <div class="arrival-right">
@@ -434,6 +406,7 @@ function showStationPopup(features, layer) {
                 </div>
             </div>`;
         };
+
 
         content += `<div class="station-body">
             <div class="station-dir-col">

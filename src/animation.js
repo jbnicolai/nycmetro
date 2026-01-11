@@ -1,8 +1,113 @@
-
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
-import { formatTime, getDelayInSeconds } from './utils.js';
 import { rtState, getMatchingTrip } from './realtime.js';
+import { renderRouteBadge, renderStatusBadge, renderTimelineRow, renderTrainFooter } from './ui.js';
+import { formatTime, getDelayInSeconds, getContrastColor } from './utils.js';
+
+// ... (imports)
+
+// Remove local getContrastColor helper at bottom of file if exists (it does)
+
+// Update updateMarkerPopup
+function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, delay) {
+    const getName = (id) => {
+        const s = schedule.stops[id];
+        return s ? s[2] : id;
+    };
+
+    const destName = getName(trip.stops[trip.stops.length - 1].id);
+    const routeId = routeInfo.short_name; // or routeInfo.id? usually same for badge
+
+    // Status Badge Logic
+    // We need to map our custom rtStatus/delay logic to the helper
+    const delayMin = Math.round((delay || 0) / 60);
+    const isLive = isRealtime;
+    // Animation doesn't explicit track isAtStation/isStopped for popup badge generally, usually just delay?
+    // Let's stick to simple "Live (+X min)" using helper if possible, or keep custom if helper insufficient.
+    // Helper renderStatusBadge is generic. Let's try to use it.
+
+    // Reuse helper for badge?
+    // The helper logic: renderStatusBadge(isLive, delayMins, isAtStation, isStopped)
+    // Animation popup usually shows "Live (+X)" in a specific bubble. 
+    // The previous code had: <div class="train-realtime-badge">...</div>
+    // Let's defer exact UI match or refactor ui.js to support this style.
+    // Actually the goal is to UNIFY. So let's use the station-style badge if appropriate, or keep custom.
+    // The user liked the "train tooltip overhaul" we just did. 
+    // It used: <div class="train-realtime-badge"><span class="blink-dot"></span> Live (+12 min)</div>
+    // This is distinct from the station popup badges. 
+    // Let's keep the custom realtime badge for trains for now to avoid regression, but use the TIMELINE helpers.
+
+    // 1. Route Badge
+    const routeBadgeHtml = renderRouteBadge(routeInfo.short_name, routeInfo);
+
+    // 2. Timeline
+    let nextIndex = trip.stops.findIndex(s => s.id === next.id && s.time === next.time);
+    if (nextIndex === -1) nextIndex = 0;
+
+    const startIdx = Math.max(0, nextIndex - 3);
+    const endIdx = Math.min(trip.stops.length, nextIndex + 5);
+    const stopSubset = trip.stops.slice(startIdx, endIdx);
+
+    const rowsHtml = stopSubset.map((stop, i) => {
+        const absoluteIndex = startIdx + i;
+        const isPast = absoluteIndex < nextIndex;
+        const isNext = absoluteIndex === nextIndex;
+        const stopName = getName(stop.id);
+
+        // Use generic helper, passing name manually since helper doesn't have schedule access
+        return renderTimelineRow({ ...stop, name: stopName }, isNext, isPast, routeInfo.color || '#333', delay);
+    }).join('');
+
+    // 3. Footer
+    const footerHtml = renderTrainFooter(
+        { ...trip.stops[0], name: getName(trip.stops[0].id) },
+        { ...trip.stops[trip.stops.length - 1], name: getName(trip.stops[trip.stops.length - 1].id) },
+        Math.round((trip.stops[trip.stops.length - 1].time - trip.stops[0].time) / 60)
+    );
+
+    // Reconstruct Content
+    // RT Status (Custom for now as per "Overhaul")
+    let rtStatus = "";
+    if (isRealtime) {
+        const delayMin = Math.round((delay || 0) / 60);
+        let delayText = "";
+        if (delayMin > 1) delayText = `<span style="color:#ef4444; margin-left:6px;">(+${delayMin} min)</span>`;
+        else if (delayMin < -1) delayText = `<span style="color:#10b981; margin-left:6px;">(${delayMin} min)</span>`;
+
+        rtStatus = `
+            <div class="train-realtime-badge">
+                <span class="blink-dot"></span> Live ${delayText}
+            </div>`;
+    }
+
+    const content = `
+    <div class="train-popup expanded-popup">
+        <div class="train-header">
+            <div class="train-title-row">
+                ${routeBadgeHtml}
+                <span class="train-dest-large">To ${destName}</span>
+            </div>
+            ${rtStatus}
+        </div>
+        
+        <div class="train-timeline">
+            ${rowsHtml}
+        </div>
+
+        ${footerHtml}
+    </div>`;
+
+    if (marker.getPopup()) {
+        marker.setPopupContent(content);
+    } else {
+        marker.bindPopup(content, {
+            className: 'train-leaflet-popup',
+            minWidth: 340,
+            maxWidth: 360,
+            autoPan: false
+        });
+    }
+}
 
 let activeMarkers = {}; // tripId -> Marker
 let activeTripIds = new Set(); // tripId set for stats
@@ -344,127 +449,4 @@ function createTrainMarker(trip, routeInfo) {
     return marker;
 }
 
-function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, delay) {
-    const getName = (id) => {
-        const s = schedule.stops[id];
-        return s ? s[2] : id;
-    };
 
-    const color = routeInfo.color || '#333';
-    const textColor = getContrastColor ? getContrastColor(color) : '#fff';
-    const destName = getName(trip.stops[trip.stops.length - 1].id);
-
-    // Find current index in the full list of stops
-    // 'next' is the upcoming stop object {id, time, shapeDist...}
-    let nextIndex = trip.stops.findIndex(s => s.id === next.id && s.time === next.time);
-    if (nextIndex === -1) nextIndex = 0; // Fallback
-
-    // Define range: -3 (past) to +4 (future)
-    const startIdx = Math.max(0, nextIndex - 3);
-    const endIdx = Math.min(trip.stops.length, nextIndex + 5);
-    const stopSubset = trip.stops.slice(startIdx, endIdx);
-
-    // Build Rows
-    const rowsHtml = stopSubset.map((stop, i) => {
-        const absoluteIndex = startIdx + i;
-        const isPast = absoluteIndex < nextIndex;
-        const isNext = absoluteIndex === nextIndex;
-
-        // Time Calc
-        const predictedTime = stop.time + (delay || 0);
-        const timeStr = formatTime(predictedTime);
-
-        // Styling classes
-        let rowClass = "train-stop-row";
-        if (isPast) rowClass += " stop-past";
-        if (isNext) rowClass += " stop-next";
-
-        // Station Link (FlyTo)
-        const name = getName(stop.id);
-
-        return `
-        <div class="${rowClass}" onclick="window.flyToStation('${stop.id}')">
-            <div class="train-stop-left">
-                 <div class="timeline-dot ${isNext ? 'pulse' : ''}" style="border-color:${color}; background:${isNext ? color : 'transparent'}"></div>
-                 <span class="train-stop-name">${name}</span>
-            </div>
-            <div class="train-stop-time">${timeStr}</div>
-        </div>`;
-    }).join('');
-
-    let rtStatus = "";
-    if (isRealtime) {
-        const delayMin = Math.round((delay || 0) / 60);
-        let delayText = "";
-        if (delayMin > 1) delayText = `<span style="color:#ef4444; margin-left:6px;">(+${delayMin} min)</span>`;
-        else if (delayMin < -1) delayText = `<span style="color:#10b981; margin-left:6px;">(${delayMin} min)</span>`;
-
-        rtStatus = `
-            <div class="train-realtime-badge">
-                <span class="blink-dot"></span> Live ${delayText}
-            </div>`;
-    }
-
-    // Trip Start/End Info
-    const startStop = trip.stops[0];
-    const endStop = trip.stops[trip.stops.length - 1];
-    const startTimeStr = formatTime(startStop.time);
-    const endTimeStr = formatTime(endStop.time);
-    const startName = getName(startStop.id);
-    const endName = getName(endStop.id);
-    const duration = Math.round((endStop.time - startStop.time) / 60);
-
-    const content = `
-    <div class="train-popup expanded-popup">
-        <div class="train-header">
-            <div class="train-title-row">
-                <span class="train-route-badge" style="background:${color}; color:${textColor};">${routeInfo.short_name}</span>
-                <span class="train-dest-large">To ${destName}</span>
-            </div>
-            ${rtStatus}
-        </div>
-        
-        <div class="train-timeline">
-            ${rowsHtml}
-        </div>
-
-        <div class="train-footer">
-            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                <span style="color:#94a3b8;">Start: 
-                    <a href="#" onclick="event.preventDefault(); window.flyToStation('${startStop.id}');" class="station-link" style="color:#cbd5e1; font-weight:normal;">${startName}</a>
-                </span>
-                <span style="color:#94a3b8;">${startTimeStr}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                <span style="color:#94a3b8;">End: 
-                    <a href="#" onclick="event.preventDefault(); window.flyToStation('${endStop.id}');" class="station-link" style="color:#cbd5e1; font-weight:normal;">${endName}</a>
-                </span>
-                <span style="color:#94a3b8;">${endTimeStr}</span>
-            </div>
-            <div style="display:flex; justify-content:center; margin-top:8px; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
-                <span style="color:#64748b; font-size:0.9em;">Duration: ${duration} min</span>
-            </div>
-        </div>
-    </div>`;
-
-    if (marker.getPopup()) {
-        marker.setPopupContent(content);
-    } else {
-        marker.bindPopup(content, {
-            className: 'train-leaflet-popup',
-            minWidth: 340,
-            maxWidth: 360,
-            autoPan: false
-        });
-    }
-}
-
-// Helper (duplicated from stations.js, ideally shared)
-function getContrastColor(hexColor) {
-    if (!hexColor) return '#fff';
-    const r = parseInt(hexColor.substr(1, 2), 16);
-    const g = parseInt(hexColor.substr(3, 2), 16);
-    const b = parseInt(hexColor.substr(5, 2), 16);
-    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000' : '#fff';
-}
