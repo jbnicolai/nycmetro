@@ -5,8 +5,8 @@ import os
 import gzip
 from urllib.parse import urlparse
 
+
 import datetime
-import time
 
 PORT = int(os.environ.get('PORT', 8001))
 DATA_FILE = "data/subway_config.json"
