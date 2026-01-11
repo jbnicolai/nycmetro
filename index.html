@@ -23,6 +23,7 @@
 
 <body>
     <div id="app">
+        <div id="rt-error-banner" class="rt-banner" style="display: none;"></div>
         <div id="map"></div>
 
         <aside id="sidebar" class="sidebar hidden">
@@ -41,7 +42,12 @@
 
         <div id="loading-overlay">
             <div class="spinner"></div>
-            <p>Loading Transportation Data...</p>
+            <p>Loading Map...</p>
+        </div>
+
+        <div id="train-loading" class="train-loader hidden">
+            <div class="mini-spinner"></div>
+            <span>Syncing Trains...</span>
         </div>
     </div>
 

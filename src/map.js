@@ -69,10 +69,15 @@ export function initMap() {
                     </svg>
                 `;
 
-                map.locate({ setView: true, maxZoom: 16 });
+                map.locate({ setView: false, enableHighAccuracy: true });
             });
 
             map.on('locationfound', (e) => {
+                // Smooth Fly
+                map.flyTo(e.latlng, 14, {
+                    animate: true,
+                    duration: 1.5
+                });
                 // Reset Icon
                 button.innerHTML = arrowIcon;
 

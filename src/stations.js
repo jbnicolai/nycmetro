@@ -1,4 +1,5 @@
 import { parseProperties, formatTime } from './utils.js';
+import { rtState } from './realtime.js';
 
 let stationScheduleIndex = null;
 let rawSchedule = null;
@@ -132,6 +133,7 @@ function showStationPopup(name, layer, feature) {
 
     // Try to find schedule content
     let stopId = feature.properties.gtfs_stop_id || feature.properties.stop_id;
+    // Fixed import
     if (stopId && stopId.length > 3) {
         stopId = stopId.substring(0, 3);
     }
@@ -140,7 +142,11 @@ function showStationPopup(name, layer, feature) {
         const data = stationScheduleIndex[stopId];
 
         const getNextTrains = (list) => {
-            return list.filter(t => t.time >= secondsSinceMidnight).slice(0, 3);
+            return list.filter(t => {
+                // Check RT status: If trip is past, filter it out? 
+                // For now, simple time check based on schedule is safer fallback
+                return t.time >= secondsSinceMidnight;
+            }).slice(0, 3);
         };
 
         const north = getNextTrains(data.N);
@@ -150,6 +156,30 @@ function showStationPopup(name, layer, feature) {
             const routeId = t.routeId;
             const color = routeConfigs[routeId] ? routeConfigs[routeId].color : '#666';
             const textColor = getContrastColor(color);
+
+            // Real-Time Lookup
+            let displayTime = t.time;
+            let statusBadge = "";
+            let timeClass = "color:#555;";
+
+            if (rtState.mode === 'REALTIME' && rtState.trips.has(t.tripId)) {
+                const rt = rtState.trips.get(t.tripId);
+                // Calculate delay relative to the *current* station's scheduled time?
+                // Using the specific stop update would be best, but we only have the "current status" stop in rtState.trips
+                // We approximated delay in animation.js using (current_rt_time - scheduled_time_at_current_rt_stop).
+                // Let's assume that delay propagates. Use the same delay logic?
+                // Complex without full trip updates. 
+                // SIMPLIFICATION: If we have RT data, we just assume "Live" status, 
+                // but without exact per-station predictions, maybe just show "Live" icon?
+
+                // Better: If the train is "STOPPED_AT" this very station, say "At Station"
+                if (rt.stopId.startsWith(stopId)) { // imprecise match (N/S suffix)
+                    statusBadge = `<span style="color:#ef4444; font-weight:bold; font-size:0.8em; margin-right:4px;">● At Station</span>`;
+                    timeClass = "color:#000; font-weight:bold;";
+                } else {
+                    statusBadge = `<span style="color:#22c55e; font-size:0.8em; margin-right:4px;">📶 Live</span>`;
+                }
+            }
 
             return `
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.9em; margin-bottom:4px;">
@@ -163,7 +193,10 @@ function showStationPopup(name, layer, feature) {
                     text-align: center;
                     display: inline-block;
                 ">${routeId}</span>
-                <span style="font-family:monospace; color:#555;">${formatTime(t.time)}</span>
+                <div style="text-align:right;">
+                    ${statusBadge}
+                    <span style="font-family:monospace; ${timeClass}">${formatTime(displayTime)}</span>
+                </div>
             </div>`;
         };
 

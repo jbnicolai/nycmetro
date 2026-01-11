@@ -5,6 +5,7 @@ import { renderStations } from './stations.js';
 import { createLegend, updateLegendLines } from './legend.js';
 import { startTrainAnimation } from './animation.js';
 import { fetchCitibikeStations, filterCitibikeStations } from './citibike.js';
+import { initRealtime } from './realtime.js';
 import { StatusPanel } from './status-panel.js';
 
 // Add Citibike Layer to State
@@ -93,6 +94,16 @@ async function runApp() {
         StatusPanel.log("Core data loaded. Rendering map...");
         StatusPanel.update("routes", Object.keys(config.routes).length);
 
+        // --- PHASE 1 COMPLETE: Hide Full Overlay, Show Train Loader ---
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const trainLoader = document.getElementById('train-loading');
+
+        if (loadingOverlay) {
+            loadingOverlay.classList.add('fade-out');
+            setTimeout(() => loadingOverlay.style.display = 'none', 500);
+        }
+        if (trainLoader) trainLoader.classList.remove('hidden');
+
         // 2. Render Static Layers Immediately
         // Neighborhoods
         L.geoJSON(neighborhoodsRes, {
@@ -140,22 +151,26 @@ async function runApp() {
                 console.log("Starting animation with filter:", visibilityFilter);
                 startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
 
+                // Start Realtime Poller
+                initRealtime();
+
+                // --- PHASE 2 COMPLETE: Hide Train Loader ---
+                if (trainLoader) trainLoader.classList.add('hidden');
+
             })
             .catch(e => {
                 console.warn("Schedule Fetch Failed", e);
                 StatusPanel.log("Schedule failed to load.");
+                if (trainLoader) {
+                    trainLoader.innerHTML = "<span>Schedule Error</span>";
+                    setTimeout(() => trainLoader.classList.add('hidden'), 3000);
+                }
             });
 
     } catch (err) {
-        // If critical fetch fails
+        // If critical fetch fails (Map Config/Stations)
         console.error("CRITICAL BOOT ERROR:", err);
         alert(`CRITICAL ERROR:\n${err.message}`);
-    } finally {
-        const loadingOverlay = document.getElementById('loading-overlay');
-        if (loadingOverlay) {
-            loadingOverlay.classList.add('fade-out');
-            setTimeout(() => loadingOverlay.style.display = 'none', 500);
-        }
     }
 }
 

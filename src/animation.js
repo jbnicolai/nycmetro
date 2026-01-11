@@ -2,6 +2,7 @@
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
 import { formatTime } from './utils.js';
+import { rtState } from './realtime.js';
 
 let activeMarkers = {}; // tripId -> Marker
 let animationFrameId;
@@ -75,6 +76,9 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
         // 1. Identify Valid Trips & Update Positions
         const activeTripIds = new Set();
 
+        // Check RT Mode
+        const useRealtime = rtState.mode === 'REALTIME';
+
         // Iterate all routes
         const routeIds = Object.keys(schedule.routes);
         for (const routeId of routeIds) {
@@ -90,14 +94,49 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                 const stops = trip.stops;
                 if (!stops || stops.length < 2) continue;
 
-                // If trip hasn't started or already ended, skip
-                if (secondsSinceMidnight < stops[0].time || secondsSinceMidnight > stops[stops.length - 1].time) {
+                // --- Realtime Logic ---
+                let effectiveTime = secondsSinceMidnight;
+                let isRealtime = false;
+
+                if (useRealtime && rtState.trips.has(trip.tripId)) {
+                    const rt = rtState.trips.get(trip.tripId);
+                    // Match stops to find delay
+                    // We assume the trip structure matches (stops are same)
+                    // If RT says "At Stop X at Time T", and Schedule says "At Stop X at Time S"
+                    // Delay = T - S.
+                    // So Effective Time (for schedule lookup) = secondsSinceMidnight - Delay
+                    // Actually, if we are delayed by 5 mins, we are "behind", so we should look up positions from 5 mins ago in the schedule? 
+                    // No, if we are delayed, we appear at a position that was scheduled for 5 mins ago.
+                    // So yes, Effective Time = Current Time - Delay
+
+                    // Let's find the scheduled time for the RT stop
+                    const scheduledStop = trip.stops.find(s => s.id === rt.stopId);
+                    if (scheduledStop && rt.time) {
+                        const delay = rt.time - scheduledStop.time;
+                        // effectiveTime -= delay; // Wait, if delay is +300 (5 mins late), then we are at a position that equals Schedule(Now - 5m). Correct.
+
+                        // However, we can simply pass the delay to the updater to display it in the popup
+                        // But for positioning, we want to snap to the RT truth.
+
+                        // NOTE: If STOPPED_AT, we should just snap to station.
+                        if (rt.status === "STOPPED_AT") {
+                            // TODO: Specific logic for stopped? For now, the delay logic implicitly handles it 
+                            // because rt.time should match "now" roughly if we are there.
+                        }
+                        effectiveTime -= delay;
+                        isRealtime = true;
+                    }
+                }
+
+                // If trip hasn't started or already ended (with buffer for delay)
+                // Use effective time for bounds check
+                if (effectiveTime < stops[0].time || effectiveTime > stops[stops.length - 1].time) {
                     continue;
                 }
 
                 // It is active!
                 activeTripIds.add(trip.tripId);
-                updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule);
+                updateTrainPosition(trip, routeId, routeInfo, effectiveTime, shapesByRoute, schedule, isRealtime, (secondsSinceMidnight - effectiveTime));
             }
         }
 
@@ -125,7 +164,7 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 /**
  * Updates a single train's position and marker
  */
-function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRoute, schedule) {
+function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRoute, schedule, isRealtime, delay) {
     // 1. Find Current Segment
     // We want the segment [prev, next] such that prev.time <= currentTime < next.time
     let prev = null;
@@ -174,7 +213,7 @@ function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRout
         marker.cachedLength = marker.cachedPath ? turf.length(marker.cachedPath) : 0;
 
         // Update popup static info only when segment changes
-        updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule);
+        updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, delay);
     }
 
     if (marker.cachedPath && marker.cachedLength > 0) {
@@ -266,7 +305,7 @@ function createTrainMarker(trip, routeInfo) {
     // CSS-based Icon
     const icon = L.divIcon({
         className: 'train-icon',
-        html: `<div style="
+        html: `<div class="train-dot" style="
             background: ${color}; 
             width: 10px; 
             height: 10px; 
@@ -280,7 +319,7 @@ function createTrainMarker(trip, routeInfo) {
     return marker;
 }
 
-function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule) {
+function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, delay) {
     const getName = (id) => {
         const s = schedule.stops[id];
         return s ? s[2] : id;
@@ -289,21 +328,53 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule) {
     const color = routeInfo.color || '#333';
     const destName = getName(trip.stops[trip.stops.length - 1].id);
 
+    // Time calculations
+    const predictedNext = next.time + (delay || 0);
+    const predictedPrev = prev.time + (delay || 0);
+
+    let rtStatus = "";
+    if (isRealtime) {
+        const delayMin = Math.round((delay || 0) / 60);
+        let delayText = "";
+        let delayColor = "#10b981"; // green
+
+        if (delayMin > 1) {
+            delayText = `(+${delayMin}m)`;
+            delayColor = "#ef4444"; // red
+        } else if (delayMin < -1) {
+            delayText = `(${delayMin}m)`;
+            delayColor = "#10b981";
+        } else {
+            delayText = ""; // On time, just show Live
+        }
+
+        rtStatus = `
+            <div style="display:flex; align-items:center; gap:4px;">
+                <span style="background:${delayColor}; color:white; padding:2px 6px; border-radius:4px; font-size:0.7em; font-weight:bold; display:flex; align-items:center; gap:2px;">
+                    <span style="animation: pulse 2s infinite;">📶</span> Live
+                </span>
+                <span style="color:${delayColor}; font-size:0.8em; font-weight:bold;">${delayText}</span>
+            </div>`;
+    }
+
     // We only create the popup content once per segment change to avoid string thrashing every frame
     const content = `
-    <div class="train-popup" style="min-width: 180px; font-family: 'Inter', sans-serif;">
-        <div style="border-bottom: 3px solid ${color}; padding-bottom: 4px; margin-bottom: 8px;">
-            <strong style="color:${color}; font-size:1.1em;">${routeInfo.short_name} Train</strong>
-            <div style="font-size:0.85em; color:#64748b;">To ${destName}</div>
+    <div class="train-popup" style="min-width: 220px; font-family: 'Inter', sans-serif;">
+        <div style="border-bottom: 2px solid ${color}; padding-bottom: 8px; margin-bottom: 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2px;">
+                <strong style="color:${color}; font-size:1.2em;">${routeInfo.short_name} Train</strong>
+                ${rtStatus}
+            </div>
+            <div style="font-size:0.85em; color:#94a3b8;">To ${destName}</div>
         </div>
-        <div style="display:grid; grid-template-columns: 20px 1fr auto; gap:6px; align-items:center; font-size:0.9em;">
-            <span style="color:#64748b;">⬇️</span> 
-            <span>${getName(next.id)}</span>
-            <span style="color:#94a3b8; font-size:0.85em; font-family:monospace;">${formatTime(next.time)}</span>
+        <div style="display:grid; grid-template-columns: 20px 1fr auto; gap:6px; align-items:center; font-size:0.95em;">
+            <span style="color:#cbd5e1;">⬇️</span> 
+            <span style="color:#f1f5f9;">${getName(next.id)}</span>
+            <span style="color:#fff; font-weight:bold; font-size:1.0em; font-family:monospace;">${formatTime(predictedNext)}</span>
 
             <span style="color:#64748b; font-size:0.8em;">⬆️</span> 
-            <span style="color:#94a3b8; font-size:0.9em;">${getName(prev.id)}</span>
-            <span style="color:#94a3b8; font-size:0.85em; font-family:monospace;">${formatTime(prev.time)}</span>
+            <span style="color:#64748b; font-size:0.9em;">${getName(prev.id)}</span>
+            <span style="color:#94a3b8; font-size:0.85em; font-family:monospace;">${formatTime(predictedPrev)}</span>
         </div>
     </div>`;
 
