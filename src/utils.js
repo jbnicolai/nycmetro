@@ -1,8 +1,9 @@
 
 export function formatTime(s) {
     if (s === undefined || s === null) return "--:--";
-    const date = new Date(s * 1000); // Input is seconds, Date takes ms
-    // Format to HH:MM:SS, using simple slice
+    // Handle wrap around 24h (86400 seconds)
+    const effectiveSeconds = s % 86400;
+    const date = new Date(effectiveSeconds * 1000);
     return date.toISOString().substr(11, 8);
 }
 
