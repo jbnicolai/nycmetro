@@ -173,11 +173,25 @@ function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRout
 
     if (!prev || !next) return; // Should catch by outer bounds check, but just in case
 
-    // 2. Calculate Progress (t)
-    const duration = next.time - prev.time;
-    if (duration <= 0) return; // Zero duration hop?
+    // 2. Calculate Progress (t) with Simulation of Wait Time (Dwell)
+    // Assume stops[i].time is DEPARTURE time.
+    // We want to arrive at next station slightly early and wait.
+    const DWELL_TIME = 25; // 25 seconds hold
+    const totalDuration = next.time - prev.time;
+
+    // The "movement" phase ends DWELL_TIME before the next departure
+    // Guard: Ensure we always have at least 10s or 50% of the segment for movement
+    const dwellForThisStretch = Math.min(DWELL_TIME, totalDuration * 0.5);
+    const moveDuration = totalDuration - dwellForThisStretch;
+
     const elapsed = currentTime - prev.time;
-    const t = elapsed / duration;
+    let t = 0;
+
+    if (elapsed >= moveDuration) {
+        t = 1.0; // At Station (next)
+    } else if (moveDuration > 0) {
+        t = elapsed / moveDuration;
+    }
 
     // 3. Get Coordinates (Cached Geometry or LERP)
     const posA = getStopCoords(schedule, prev.id);
