@@ -7,6 +7,7 @@ import { startTrainAnimation } from './animation.js';
 import { fetchCitibikeStations, filterCitibikeStations } from './citibike.js';
 import { initRealtime } from './realtime.js';
 import { StatusPanel } from './status-panel.js';
+import { initAlerts } from './alerts.js';
 
 // Add Citibike Layer to State
 layers.citibike = L.layerGroup();
@@ -80,6 +81,8 @@ async function runApp() {
         });
     });
 
+
+
     try {
         // 1. Critical Fetch: Core Map Data (Parallel)
         console.time("CoreFetch");
@@ -125,6 +128,9 @@ async function runApp() {
             updateLegendLines(config.routes, toggleRouteLayer);
         } catch (e) { console.error("Legend Update Failed", e); }
 
+        // Init Alerts
+        const legendControl = document.querySelector('.legend-control');
+        initAlerts(legendControl); // Pass the container if it exists, or let function find it
 
         // 3. Initial Station Render (Visuals only, no schedule yet)
         try {

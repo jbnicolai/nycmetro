@@ -8,13 +8,18 @@ from urllib.parse import urlparse
 import datetime
 import requests
 from google.transit import gtfs_realtime_pb2
+import time
+import threading
 from threading import Lock
 
 PORT = int(os.environ.get('PORT', 8001))
 DATA_FILE = "data/subway_config.json"
 SCHEDULE_FILE = "data/subway_schedule.json"
 ENV = os.environ.get('ENV', 'development')
-ENV = os.environ.get('ENV', 'development')
+
+MTA_ALERTS_URL = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeed_id=c"
+ALERTS_CACHE = []
+alerts_lock = Lock()
 
 # --- Realtime Cache ---
 RT_CACHE = {
@@ -49,6 +54,60 @@ if os.path.exists(SCHEDULE_FILE):
     except Exception as e:
         print(f"Failed to load schedule: {e}")
 
+def fetch_alerts_feed():
+    """Polls the MTA GTFS-Realtime Alerts Feed periodically."""
+    global ALERTS_CACHE
+    while True:
+        try:
+            print("[Alerts] Fetching feed...", flush=True)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = requests.get(MTA_ALERTS_URL, headers=headers, timeout=10)
+            
+            if resp.status_code == 200:
+                feed = gtfs_realtime_pb2.FeedMessage()
+                feed.ParseFromString(resp.content)
+                
+                new_alerts = []
+                for entity in feed.entity:
+                    if entity.HasField('alert'):
+                        alert = entity.alert
+                        
+                        # Extract text (english)
+                        header_text = "Alert"
+                        if alert.header_text.translation:
+                            header_text = alert.header_text.translation[0].text
+                        
+                        description_text = ""
+                        if alert.description_text.translation:
+                            description_text = alert.description_text.translation[0].text
+
+                        # Extract affected entities (routes)
+                        affected_routes = []
+                        for sel in alert.informed_entity:
+                            if sel.route_id:
+                                affected_routes.append(sel.route_id)
+                        
+                        new_alerts.append({
+                            "id": entity.id,
+                            "header": header_text,
+                            "description": description_text,
+                            "routes": list(set(affected_routes)) # Dedupe
+                        })
+                
+                with alerts_lock:
+                    ALERTS_CACHE = new_alerts
+                    
+                print(f"[Alerts] Updated. {len(new_alerts)} active alerts.", flush=True)
+            else:
+                print(f"[Alerts] Fetch failed: {resp.status_code}", flush=True)
+                
+        except Exception as e:
+            print(f"[Alerts] Error fetching feed: {e}", flush=True)
+            
+        time.sleep(60) # Poll every minute
+
 def fetch_realtime_feed():
     """Fetches and parses GTFS-RT feed from MTA."""
     FEED_URLS = [
@@ -65,6 +124,7 @@ def fetch_realtime_feed():
     headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
     
     trips = []
+    collected_alerts = []
     
     for url in FEED_URLS:
         try:
@@ -84,7 +144,32 @@ def fetch_realtime_feed():
                              print(f"[DEBUG-RT-ID] {entity.trip_update.trip.trip_id}", flush=True)
                              logged_rt_ids += 1
 
+                # Check for Alerts in the main feed
                 for entity in feed.entity:
+                    if entity.HasField('alert'):
+                        # print(f"[FOUND-ALERT] ID: {entity.id} in feed {url}", flush=True)
+                        alert = entity.alert
+                        
+                        header_text = "Alert"
+                        if alert.header_text.translation:
+                            header_text = alert.header_text.translation[0].text
+                        
+                        description_text = ""
+                        if alert.description_text.translation:
+                            description_text = alert.description_text.translation[0].text
+                            
+                        affected_routes = []
+                        for sel in alert.informed_entity:
+                            if sel.route_id:
+                                affected_routes.append(sel.route_id)
+                        
+                        collected_alerts.append({
+                            "id": entity.id,
+                            "header": header_text,
+                            "description": description_text,
+                            "routes": list(set(affected_routes))
+                        })
+
                     if entity.HasField('trip_update'):
                         tu = entity.trip_update
                         trip_id = tu.trip.trip_id
@@ -100,11 +185,47 @@ def fetch_realtime_feed():
                                 "status": "STOPPED_AT" if not stu.arrival.time else "IN_TRANSIT_TO",
                                 "time": stu.arrival.time or stu.departure.time
                             })
+                            
+            # Update Alerts Cache globally (deduping if needed, but for now replace)
+            # Since we iterate multiple feeds, we should accumulate.
+            # But alerts might be duplicated across feeds. 
+            pass
+            
         except Exception as e:
             print(f"Error fetching feed {url}: {e}")
-            # Continue to next feed even if one fails
             continue
+    
+
+
+    # DEBUG: Dump IDs to file
+    try:
+        with open("debug_ids.txt", "w") as f:
+            f.write("--- RT Sample IDs ---\n")
+            # We need to collect some trip IDs from the feed we just parsed
+            # But the loop above iterates multiple feeds.
+            # Let's just dump the `trips` list we collected so far.
+            for t in trips[:20]:
+                f.write(f"RT: {t['tripId']} (Route: {t['routeId']})\n")
             
+            f.write("\n--- Schedule Sample IDs ---\n")
+            # Access global SCHEDULE_CACHE
+            if 'SCHEDULE_CACHE' in globals() and SCHEDULE_CACHE:
+                if 'A' in SCHEDULE_CACHE['routes']:
+                    f.write("Route A Samples:\n")
+                    for t in SCHEDULE_CACHE['routes']['A'][:10]:
+                        f.write(f"Static: {t['tripId']}\n")
+                if '1' in SCHEDULE_CACHE['routes']:
+                    f.write("Route 1 Samples:\n")
+                    for t in SCHEDULE_CACHE['routes']['1'][:10]:
+                        f.write(f"Static: {t['tripId']}\n")
+    except Exception as e:
+        print(f"Debug Write Error: {e}")
+
+    # Update Global Alerts Cache once after all feeds
+    with alerts_lock:
+        ALERTS_CACHE[:] = collected_alerts # Replace in-place
+            
+    return trips
     return trips
 
 class MyHandler(http.server.SimpleHTTPRequestHandler):
@@ -277,6 +398,16 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content)
             
+        elif self.path == '/api/alerts':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            with alerts_lock:
+                data = json.dumps(ALERTS_CACHE)
+                
+            self.wfile.write(data.encode('utf-8'))
+            
         else:
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
 
@@ -312,6 +443,35 @@ class ReuseAddrTCPServer(socketserver.TCPServer):
 
 if __name__ == "__main__":
     print(f"Server starting on port {PORT} in {ENV} mode...")
+    
+    # Load Schedule
+    try:
+        with open(SCHEDULE_FILE, 'r') as f:
+            SCHEDULE_CACHE = json.load(f)
+        
+        print("Normalizing Trip IDs...")
+        count = 0
+        for rid, trips in SCHEDULE_CACHE.get('routes', {}).items():
+            for trip in trips:
+                original = trip.get('tripId', "")
+                parts = original.split('_')
+                if len(parts) >= 2:
+                    trip['tripId'] = "_".join(parts[-2:])
+                    count += 1
+        print(f"Schedule loaded and normalized {count} IDs successfully.")
+
+    except Exception as e:
+        print(f"Failed to load schedule: {e}")
+
+    # Start Realtime Thread (Poller for Trips)
+    # We disable daemon mode so it doesn't just die instantly if main exits (but typical httpd.serve_forever keeps it alive)
+    # rt_thread = threading.Thread(target=fetch_realtime_feed, daemon=True)
+    # rt_thread.start()
+
+    # Start Alerts Thread (Poller for Service Alerts)
+    # alert_thread = threading.Thread(target=fetch_alerts_feed, daemon=True)
+    # alert_thread.start()
+
     try:
         with ReuseAddrTCPServer(("", PORT), MyHandler) as httpd:
             httpd.serve_forever()

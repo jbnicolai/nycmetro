@@ -7,6 +7,7 @@ export const rtState = {
     mode: 'REALTIME', // 'REALTIME' or 'SCHEDULE_FALLBACK'
     lastUpdate: 0,
     trips: new Map(), // Map<tripId, { status: "STOPPED_AT"|"IN_TRANSIT_TO", stopId, time, timestamp }>
+    fuzzyTrips: new Map(), // Map<Time_Route_Dir, TripObject>
     hasError: false
 };
 
@@ -46,13 +47,26 @@ async function fetchRealtimeData() {
         // But we might want to keep some history if needed.
         // Let's clear and rebuild for simplicity of "current snapshot"
         rtState.trips.clear();
+        rtState.fuzzyTrips.clear();
 
         if (data.trips && Array.isArray(data.trips)) {
             data.trips.forEach(t => {
-                rtState.trips.set(t.tripId, {
-                    ...t,
-                    timestamp: Date.now()
-                });
+                // Strict Match
+                const tripData = { ...t, timestamp: Date.now() };
+                rtState.trips.set(t.tripId, tripData);
+
+                // Fuzzy Match (Time_Route_Dir)
+                // tripId expected format: 123456_R..D...
+                // We extract 123456_R and D.
+                if (t.tripId && t.tripId.includes('..')) {
+                    const parts = t.tripId.split('..');
+                    if (parts.length >= 2) {
+                        const base = parts[0];
+                        const dir = parts[1].charAt(0);
+                        const key = `${base}_${dir}`;
+                        rtState.fuzzyTrips.set(key, tripData);
+                    }
+                }
             });
         }
 

@@ -5,6 +5,7 @@ import { formatTime } from './utils.js';
 import { rtState } from './realtime.js';
 
 let activeMarkers = {}; // tripId -> Marker
+let activeTripIds = new Set(); // tripId set for stats
 let animationFrameId;
 
 // Safe Turf Wrapper
@@ -67,14 +68,22 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
         // Also update status panel with NYC time
         if (nowMs - lastFpsUpdate >= 1000) {
             StatusPanel.update("fps", frameCount);
-            StatusPanel.update("trains", Object.keys(activeMarkers).length);
+
+            // Calculate Active Stats
+            const total = activeTripIds.size;
+            let rtCount = 0;
+            activeTripIds.forEach(id => {
+                if (rtState.trips.has(id)) rtCount++;
+            });
+
+            StatusPanel.update("trains", `<span style="color:#fff">${total}</span> <span style="font-size:0.8em; color:#aaa;">(${rtCount} live)</span>`);
             StatusPanel.update("time", formatTime(secondsSinceMidnight));
             lastFpsUpdate = nowMs;
             frameCount = 0;
         }
 
         // 1. Identify Valid Trips & Update Positions
-        const activeTripIds = new Set();
+        const nextActiveTripIds = new Set();
 
         // Check RT Mode
         const useRealtime = rtState.mode === 'REALTIME';
@@ -90,6 +99,7 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 
             // Optimization: Maybe binary search trips in future? For now, simple loop.
             for (const trip of trips) {
+                // ... (lines 102-145 omitted for brevity, keeping same logic) ...
                 // Optimization: Trip bounds check
                 const stops = trip.stops;
                 if (!stops || stops.length < 2) continue;
@@ -100,54 +110,35 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 
                 if (useRealtime && rtState.trips.has(trip.tripId)) {
                     const rt = rtState.trips.get(trip.tripId);
-                    // Match stops to find delay
-                    // We assume the trip structure matches (stops are same)
-                    // If RT says "At Stop X at Time T", and Schedule says "At Stop X at Time S"
-                    // Delay = T - S.
-                    // So Effective Time (for schedule lookup) = secondsSinceMidnight - Delay
-                    // Actually, if we are delayed by 5 mins, we are "behind", so we should look up positions from 5 mins ago in the schedule? 
-                    // No, if we are delayed, we appear at a position that was scheduled for 5 mins ago.
-                    // So yes, Effective Time = Current Time - Delay
-
-                    // Let's find the scheduled time for the RT stop
                     const scheduledStop = trip.stops.find(s => s.id === rt.stopId);
                     if (scheduledStop && rt.time) {
                         const delay = rt.time - scheduledStop.time;
-                        // effectiveTime -= delay; // Wait, if delay is +300 (5 mins late), then we are at a position that equals Schedule(Now - 5m). Correct.
-
-                        // However, we can simply pass the delay to the updater to display it in the popup
-                        // But for positioning, we want to snap to the RT truth.
-
-                        // NOTE: If STOPPED_AT, we should just snap to station.
-                        if (rt.status === "STOPPED_AT") {
-                            // TODO: Specific logic for stopped? For now, the delay logic implicitly handles it 
-                            // because rt.time should match "now" roughly if we are there.
-                        }
                         effectiveTime -= delay;
                         isRealtime = true;
                     }
                 }
 
-                // If trip hasn't started or already ended (with buffer for delay)
-                // Use effective time for bounds check
                 if (effectiveTime < stops[0].time || effectiveTime > stops[stops.length - 1].time) {
                     continue;
                 }
 
                 // It is active!
-                activeTripIds.add(trip.tripId);
+                nextActiveTripIds.add(trip.tripId);
                 updateTrainPosition(trip, routeId, routeInfo, effectiveTime, shapesByRoute, schedule, isRealtime, (secondsSinceMidnight - effectiveTime));
             }
         }
 
         // 2. Cleanup Old Markers
         for (const tripId in activeMarkers) {
-            if (!activeTripIds.has(tripId)) {
+            if (!nextActiveTripIds.has(tripId)) {
                 // Train finished or route hidden
                 layers.trains.removeLayer(activeMarkers[tripId]);
                 delete activeMarkers[tripId];
             }
         }
+
+        // Update Global State
+        activeTripIds = nextActiveTripIds;
 
         // Heartbeat Log
         if (nowMs - lastLog > 10000) {

@@ -565,3 +565,157 @@ body.rt-error .leaflet-control-container .leaflet-top {
     top: 50px;
     transition: top 0.3s ease;
 }
+
+/* Alerts Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 4000;
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.modal.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.modal-content {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+    padding: 16px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #f1f5f9;
+}
+
+#close-alerts {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.modal-body {
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.alert-item {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.alert-header {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.alert-routes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.route-badge {
+    background: #334155;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.8rem;
+}
+
+.badge-A,
+.badge-C,
+.badge-E {
+    background: #0062CF;
+}
+
+.badge-B,
+.badge-D,
+.badge-F,
+.badge-M {
+    background: #EB6800;
+}
+
+.badge-1,
+.badge-2,
+.badge-3 {
+    background: #EE352E;
+}
+
+.badge-4,
+.badge-5,
+.badge-6 {
+    background: #00933C;
+}
+
+.badge-N,
+.badge-Q,
+.badge-R,
+.badge-W {
+    background: #FCCC0A;
+    color: black;
+}
+
+.badge-7 {
+    background: #B933AD;
+}
+
+.badge-L {
+    background: #A7A9AC;
+    color: black;
+}
+
+.badge-G {
+    background: #6CBE45;
+}
+
+.badge-J,
+.badge-Z {
+    background: #996633;
+}
+
+.alert-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #fca5a5;
+    line-height: 1.3;
+}
+
+.alert-desc {
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    line-height: 1.5;
+}
