@@ -169,8 +169,23 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                             sliced.geometry.coordinates.reverse();
                         }
 
-                        train.cachedPath = sliced;
-                        train.cachedLength = window.turf.length(sliced);
+                        // Simplify to remove micro-jitter/stair-stepping
+                        // Wrap in try-catch because turf.simplify can crash on very short/degenerate lines
+                        try {
+                            // Only simplify if we have enough points to matter
+                            if (sliced.geometry.coordinates.length > 2) {
+                                const simpleSliced = window.turf.simplify(sliced, { tolerance: 0.00005, highQuality: false });
+                                train.cachedPath = simpleSliced;
+                                train.cachedLength = window.turf.length(simpleSliced);
+                            } else {
+                                train.cachedPath = sliced;
+                                train.cachedLength = window.turf.length(sliced);
+                            }
+                        } catch (err) {
+                            console.warn("Simplification failed, using original slice", err);
+                            train.cachedPath = sliced;
+                            train.cachedLength = window.turf.length(sliced);
+                        }
                     }
                 } catch (e) {
                     console.warn("Slice failed", e);
