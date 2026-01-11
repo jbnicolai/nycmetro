@@ -537,17 +537,20 @@ function getStopCoords(schedule, stopId) {
 
 function createTrainMarker(trip, routeInfo) {
     const color = routeInfo.color || '#fff';
-    // CSS-based Icon
+    // CSS-based Icon with large hit area (32px)
     const icon = L.divIcon({
         className: 'train-icon',
-        html: `<div class="train-dot" style="
-            background: ${color}; 
-            width: 10px; 
-            height: 10px; 
-            border-radius: 50%; 
-            box-shadow: 0 0 4px ${color}; 
-            border: 1.5px solid white;"></div>`,
-        iconSize: [10, 10]
+        html: `<div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                <div class="train-dot" style="
+                    background: ${color}; 
+                    width: 10px; 
+                    height: 10px; 
+                    border-radius: 50%; 
+                    box-shadow: 0 0 4px ${color}; 
+                    border: 1.5px solid white;"></div>
+               </div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16] // Center it
     });
 
     const marker = L.marker([0, 0], { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);

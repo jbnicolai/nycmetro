@@ -277,10 +277,10 @@ export function renderStations(geoJson, layerGroup, schedule, routes) {
         // Create markers for each item in bundle
         bundle.forEach(item => {
             const marker = L.circleMarker(item.latlng, {
-                radius: 3,
+                radius: 4.5,
                 fillColor: '#ffffff',
                 color: '#000',
-                weight: 1,
+                weight: 1.5,
                 opacity: 1,
                 fillOpacity: 0.8
             });

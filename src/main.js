@@ -18,10 +18,8 @@ async function runApp() {
     const map = initMap();
     layers.citibike.addTo(map);
 
-    // Auto-Locate on Startup
-    if (window.triggerLocate) {
-        window.triggerLocate();
-    }
+    // [MOD] triggerLocate moved later in runApp to avoid jank during initial render
+
 
     createLegend(map, layers, async (color, checked) => {
         if (!checked) {
@@ -98,54 +96,64 @@ async function runApp() {
         ]);
         console.timeEnd("CoreFetch");
 
+        const trainLoader = document.getElementById('train-loading');
+        let renderedShapes = config.shapes; // Fallback
+
+        // Create a promise that resolves when the map stops moving or after a timeout
+        const mapReady = new Promise(resolve => {
+            let fired = false;
+            const done = () => { if (!fired) { fired = true; resolve(); } };
+            map.once('moveend', done);
+            setTimeout(done, 4000); // Guard timeout
+        });
+
+        // 2. Trigger Auto-Locate IMMEDIATELY (Only if approved, else it stays default)
+        if (window.triggerLocate) {
+            window.triggerLocate();
+        }
+
+        // Wait for map to settle before slamming the CPU with rendering
+        await mapReady;
+
         StatusPanel.init();
-        StatusPanel.log("Core data loaded. Rendering map...");
+        StatusPanel.log("Location locked. Rendering system...");
         StatusPanel.update("routes", Object.keys(config.routes).length);
 
-        // --- PHASE 1 COMPLETE: Hide Full Overlay, Show Train Loader ---
+        // --- PHASE 2: Hide Overlay, Rendering Static Layers ---
         const loadingOverlay = document.getElementById('loading-overlay');
-        const trainLoader = document.getElementById('train-loading');
-
         if (loadingOverlay) {
             loadingOverlay.classList.add('fade-out');
             setTimeout(() => loadingOverlay.style.display = 'none', 500);
         }
-        if (trainLoader) trainLoader.classList.remove('hidden');
 
-        // 2. Render Static Layers Immediately
         // Neighborhoods
         L.geoJSON(neighborhoodsRes, {
             style: { color: '#38bdf8', weight: 1, opacity: 0.3, fillColor: '#0f172a', fillOpacity: 0.1 }
         }).addTo(layers.neighborhoods);
 
         // Subway Lines
-        let renderedShapes = config.shapes; // Fallback
-        try {
-            console.log("Rendering Subway Lines...");
-            const result = await renderSubwayLines(map, config.shapes, config.routes);
-            if (result) renderedShapes = result;
-        } catch (e) {
-            console.error("Line Rendering Failed:", e);
-        }
+        console.log("Rendering Subway Lines...");
+        const lineResult = await renderSubwayLines(map, config.shapes, config.routes);
+        if (lineResult) renderedShapes = lineResult;
 
         // Update Legend
-        try {
-            updateLegendLines(config.routes, toggleRouteLayerBatch);
-        } catch (e) { console.error("Legend Update Failed", e); }
+        updateLegendLines(config.routes, toggleRouteLayerBatch);
 
         // Init Alerts
         const legendControl = document.querySelector('.legend-control');
-        initAlerts(legendControl); // Pass the container if it exists, or let function find it
+        initAlerts(legendControl);
 
-        // 3. Initial Station Render (Visuals only, no schedule yet)
-        try {
-            StatusPanel.log("Rendering Stations (Visual)...");
-            renderStations(stationsRes, layers.stations, null, config.routes);
-            StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
-        } catch (e) { throw new Error("Station Rendering Failed: " + e.message); }
+        // Initial Station Render
+        renderStations(stationsRes, layers.stations, null, config.routes);
+        StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
 
 
-        // 4. Lazy Fetch: Schedule (Heavy Asset)
+        // 4. Trigger Auto-Locate NOW (After visual layers are on map but before heavy schedule)
+        if (window.triggerLocate) {
+            window.triggerLocate();
+        }
+
+        // 5. Lazy Fetch: Schedule (Heavy Asset)
         StatusPanel.log("Loading Schedule...");
         console.time("ScheduleFetch");
         fetch('/api/schedule')

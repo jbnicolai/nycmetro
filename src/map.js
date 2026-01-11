@@ -17,7 +17,8 @@ export function initMap() {
         minZoom: 11,
         maxZoom: 18,
         zoomControl: false,
-        preferCanvas: true
+        preferCanvas: true,
+        renderer: L.canvas({ padding: 0.5, tolerance: 10 })
     });
 
     // Dark Map Style (CartoDB Dark Matter)
@@ -77,7 +78,8 @@ export function initMap() {
                 // Smooth Fly
                 map.flyTo(e.latlng, 15, {
                     animate: true,
-                    duration: 1.5
+                    duration: 3, // Slower, smoother fly
+                    easeLinearity: 0.1
                 });
                 // Reset Icon
                 button.innerHTML = arrowIcon;
@@ -123,6 +125,21 @@ export function initMap() {
     layers.routes.addTo(map);
     layers.stations.addTo(map);
     layers.trains.addTo(map); // Make sure trains are on top
+
+    // Zoom Level Listener for Dynamic Line Weights
+    const updateLineWeights = () => {
+        const zoom = map.getZoom();
+        const weight = zoom <= 13 ? 1.5 : (zoom <= 15 ? 3 : 5);
+
+        Object.values(layers.routeLayers).forEach(group => {
+            group.eachLayer(layer => {
+                if (layer.setStyle) layer.setStyle({ weight: weight });
+            });
+        });
+    };
+
+    map.on('zoomend', updateLineWeights);
+    map.on('zoom', updateLineWeights);
 
     // Create a custom pane for trains to ensure they are always above lines
     map.createPane('trainsPane');
@@ -176,8 +193,8 @@ export async function renderSubwayLines(map, shapes, routes) {
             offsetFeatures.push(candidate);
         }
 
-        // Yield to UI every 100 features to prevent long freeze on mobile
-        if (i % 100 === 0) await new Promise(r => requestAnimationFrame(r));
+        // Yield to UI every 50 features to be more polite during heavy flyTo
+        if (i % 50 === 0) await new Promise(r => requestAnimationFrame(r));
     }
     console.timeEnd("ProcessLines");
 
@@ -205,9 +222,9 @@ export async function renderSubwayLines(map, shapes, routes) {
 
             const poly = L.polyline(latlngs, {
                 color: color,
-                weight: 3,
+                weight: map.getZoom() <= 13 ? 2 : 3,
                 opacity: 0.8,
-                smoothFactor: 1.5, // Optimization for high zoom
+                smoothFactor: 1.5,
                 lineCap: 'round',
                 lineJoin: 'round',
                 className: `subway-line-${rid}`
@@ -220,8 +237,8 @@ export async function renderSubwayLines(map, shapes, routes) {
         layers.routeLayers[rid] = routeGroup;
         routeGroup.addTo(layers.routes);
 
-        // Yield every few routes
-        await new Promise(r => requestAnimationFrame(r));
+        // Yield every 2 routes
+        if (Object.keys(layers.routeLayers).length % 2 === 0) await new Promise(r => requestAnimationFrame(r));
     }
 
     if (!map.hasLayer(layers.routes)) {
