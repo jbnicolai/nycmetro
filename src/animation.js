@@ -2,15 +2,12 @@
 
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
+import { formatTime } from './utils.js';
 
 let activeMarkers = {}; // tripId -> Marker
 let animationFrameId;
 
-// Helper: Seconds to HH:MM:SS
-function formatTime(s) {
-    const dates = new Date(s * 1000).toISOString().substr(11, 8);
-    return dates;
-}
+// Helper: Seconds to HH:MM:SS (Removed local, using utils)
 
 export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
@@ -161,8 +158,17 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                     if (bestShape) {
                         const ptA = window.turf.point([posA[1], posA[0]]);
                         const ptB = window.turf.point([posB[1], posB[0]]);
-                        // Slicing is heavier but we only do it once per station segment
                         const sliced = window.turf.lineSlice(ptA, ptB, bestShape);
+
+                        // Fix Direction: Ensure sliced line starts at A and ends at B
+                        const startDist = window.turf.distance(ptA, window.turf.point(sliced.geometry.coordinates[0]));
+                        const endDist = window.turf.distance(ptA, window.turf.point(sliced.geometry.coordinates[sliced.geometry.coordinates.length - 1]));
+
+                        if (endDist < startDist) {
+                            // The line is backwards relative to our direction of travel
+                            sliced.geometry.coordinates.reverse();
+                        }
+
                         train.cachedPath = sliced;
                         train.cachedLength = window.turf.length(sliced);
                     }
@@ -215,8 +221,8 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                 marker = L.marker(latLng, { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
                 activeMarkers[trip.tripId] = marker;
 
-                marker.bindPopup(function () {
-                    const d = this.stopData; // Dynamic data attached to marker
+                marker.bindPopup(function (layer) {
+                    const d = layer.stopData; // Dynamic data attached to marker
                     if (!d) return "Loading...";
                     return `
                     <div class="train-popup" style="min-width: 200px; font-family: 'Inter', sans-serif;">
@@ -224,9 +230,14 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                             <strong style="color:${color}; font-size:1.2em;">${routeInfo.short_name} Train</strong>
                             <div style="font-size:0.8em; color:#888;">To ${getName(trip.stops[trip.stops.length - 1].id)}</div>
                         </div>
-                        <div style="display:grid; grid-template-columns: 15px 1fr; gap:5px; align-items:center; font-size:0.9em;">
-                            <span style="color:#888;">▼</span> <span>${getName(d.next.id)}</span>
-                            <span style="color:#888; font-size:0.8em;">▲</span> <span style="color:#666; font-size:0.9em;">${getName(d.prev.id)}</span>
+                        <div style="display:grid; grid-template-columns: 20px 1fr auto; gap:5px; align-items:center; font-size:0.9em;">
+                            <span style="color:#888;">⬇️</span> 
+                            <span>${getName(d.next.id)}</span>
+                            <span style="color:#aaa; font-size:0.85em; font-family:monospace;">${formatTime(d.next.time)}</span>
+
+                            <span style="color:#888; font-size:0.8em;">⬆️</span> 
+                            <span style="color:#666; font-size:0.9em;">${getName(d.prev.id)}</span>
+                            <span style="color:#aaa; font-size:0.85em; font-family:monospace;">${formatTime(d.prev.time)}</span>
                         </div>
                     </div>`;
                 });

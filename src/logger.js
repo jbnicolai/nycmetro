@@ -25,8 +25,8 @@ function sendLog(level, args) {
         .then(res => {
             if (!res.ok) {
                 // If server rejects us (e.g. 403 because DEBUG env var is unset), stop trying.
-                console.warn("[Logger] Remote logging disabled by server (Status " + res.status + ")");
                 isRemoteLoggingEnabled = false;
+                console.warn("[Logger] Remote logging disabled by server (Status " + res.status + ")");
             }
         })
         .catch(e => {

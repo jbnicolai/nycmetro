@@ -60,8 +60,8 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/api/log':
-            # Only allow writing logs if DEBUG env var is set
-            if not os.environ.get('DEBUG'):
+            # Only allow writing logs if DEBUG env var is set OR we are in development
+            if ENV != 'development' and not os.environ.get('DEBUG'):
                 self.send_response(403)
                 self.end_headers()
                 return
