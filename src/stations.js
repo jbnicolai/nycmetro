@@ -21,7 +21,6 @@ const stationMarkers = new Map();
 // Expose global jumper
 window.flyToStation = (stationId) => {
     // Try to find by base ID
-    // Try to find by base ID
     let marker = stationMarkers.get(stationId);
     if (!marker) {
         // Try stripping direction suffix (e.g. "125S" -> "125")
@@ -30,13 +29,12 @@ window.flyToStation = (stationId) => {
     }
 
     if (!marker) {
-        // Try fuzzy? iterating map is slow but robust if needed
         console.warn("Station not found:", stationId);
         return;
     }
 
     // Fly to it
-    const map = marker._map; // Leaflet layer has _map if added
+    const map = marker._map;
     if (map) {
         map.flyTo(marker.getLatLng(), 15, { animate: true, duration: 1.2 });
         marker.fire('click'); // Trigger popup
@@ -55,11 +53,16 @@ async function buildStationScheduleIndex(schedule) {
     console.time("BuildStationIndex");
     const routeIds = Object.keys(schedule.routes);
     let tripCount = 0;
+    let yieldCounter = 0;
 
     for (const routeId of routeIds) {
         const trips = schedule.routes[routeId];
         for (const trip of trips) {
             tripCount++;
+
+            // Yield every 50 trips to keep UI responsive
+            if (++yieldCounter % 50 === 0) await yieldToMain();
+
             trip.stops.forEach(stop => {
                 const baseId = stop.id.substring(0, 3);
                 const dir = stop.id.slice(-1);
@@ -89,7 +92,8 @@ async function buildStationScheduleIndex(schedule) {
             dirs[d].sort((a, b) => a.time - b.time);
         });
     });
-    console.log("Station Index Built.");
+    console.timeEnd("BuildStationIndex");
+    console.log(`Station Index Built: ${tripCount} trips processed.`);
 }
 
 // Helper to match GeoJSON station to Schedule Stop ID by proximity
@@ -97,19 +101,15 @@ function matchStationId(lat, lng, stops) {
     if (!stops) return null;
     let minDistSq = Infinity;
     let bestId = null;
-    // Threshold: ~300m (approx 0.003 degrees)
     const THRESHOLD = 0.003 ** 2;
-
-    // We only need to check parent IDs (often 3 chars like '101') or just all.
-    // The schedule index uses base IDs (first 3 chars).
-    // The 'stops' object keys include '101', '101N', '101S'. 
-    // We prefer the numeric timestamp based IDs if possible or just the base.
-    // Let's iterate all.
 
     for (const [id, data] of Object.entries(stops)) {
         // data is [lat, lon, name]
-        const [sLat, sLon] = data;
-        const dSq = (lat - sLat) ** 2 + (lng - sLon) ** 2;
+        // Skip specific platform IDs for speed if possible, but here we need a broad check
+        // NYC GTFS parent stations are usually 3 chars. 
+        if (id.length > 3) continue;
+
+        const dSq = (lat - data[0]) ** 2 + (lng - data[1]) ** 2;
         if (dSq < minDistSq) {
             minDistSq = dSq;
             bestId = id;
@@ -117,18 +117,6 @@ function matchStationId(lat, lng, stops) {
     }
 
     return minDistSq < THRESHOLD ? bestId : null;
-}
-
-// Helper to get text color based on background (simple brightness check)
-function getContrastColor(hexColor) {
-    if (!hexColor) return '#000';
-    // Convert hex to rgb
-    const r = parseInt(hexColor.substr(1, 2), 16);
-    const g = parseInt(hexColor.substr(3, 2), 16);
-    const b = parseInt(hexColor.substr(5, 2), 16);
-    // YIQ equation
-    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000000' : '#ffffff';
 }
 
 let routeConfigs = {};
@@ -244,14 +232,17 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
 
     if (!geoJson || !geoJson.features) return;
 
-    geoJson.features.forEach(feature => {
-        if (!feature.geometry || !feature.geometry.coordinates) return;
+    let featureCounter = 0;
+    for (const feature of geoJson.features) {
+        if (++featureCounter % 50 === 0) await yieldToMain();
+
+        if (!feature.geometry || !feature.geometry.coordinates) continue;
 
         const [lng, lat] = feature.geometry.coordinates; // GeoJSON is Lng, Lat
-        if (isNaN(lat) || isNaN(lng)) return;
+        if (isNaN(lat) || isNaN(lng)) continue;
 
         const latlng = L.latLng(lat, lng);
-        const { name } = parseProperties(feature); // Ensure utility is imported or just use properties
+        const { name } = parseProperties(feature);
 
         // Try to match station ID early (needed for everything else)
         if (schedule && schedule.stops && !feature.properties.gtfs_stop_id) {
@@ -264,8 +255,6 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
         // Find matching bundle
         let added = false;
         for (const bundle of bundles) {
-            // Check name and distance to the first element's position
-            // Simple Euclidian approximation or Leaftlet distanceTo
             const leader = bundle[0];
             if (leader.name === name) {
                 const dist = leader.latlng.distanceTo(latlng);
@@ -280,7 +269,7 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
         if (!added) {
             bundles.push([{ feature, latlng, name }]);
         }
-    });
+    }
 
     // 2. Render Bundles
     bundles.forEach(bundle => {

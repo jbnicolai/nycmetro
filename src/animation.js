@@ -159,14 +159,17 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
     // Initial scan to populate currentTrips immediately
     const startSecs = unixToSecondsSinceMidnight(Date.now() / 1000);
-    currentTrips = scanActiveTrips(startSecs);
+    currentTrips = await scanActiveTrips(startSecs);
 
-    function scanActiveTrips(secondsSinceMidnight) {
+    async function scanActiveTrips(secondsSinceMidnight) {
         const activeList = [];
         const useRealtime = rtState.mode === 'REALTIME';
+        let yieldCounter = 0;
 
         const stats = {};
-        routeKeys.forEach(routeIdRaw => {
+        for (const routeIdRaw of routeKeys) {
+            if (++yieldCounter % 10 === 0) await yieldToMain();
+
             const routeId = normId(routeIdRaw);
             if (visibilitySet && visibilitySet.has(routeId)) return;
             const routeInfo = routes[routeIdRaw] || routes[routeId] || { color: '#ffffff', short_name: routeId };
@@ -245,12 +248,12 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                     });
                 });
             }
-        });
+        }
 
         return activeList;
     }
 
-    function animate() {
+    async function animate() {
         const now = new Date();
         const nowMs = now.getTime();
         frameCount++;
@@ -259,8 +262,11 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
         // 1. Heavy Scan (1s)
         if (nowMs - lastScan > 1000) {
-            currentTrips = scanActiveTrips(secondsSinceMidnight);
+            performance.mark('scan-start');
+            currentTrips = await scanActiveTrips(secondsSinceMidnight);
             lastScan = nowMs;
+            performance.mark('scan-end');
+            performance.measure('scan-duration', 'scan-start', 'scan-end');
 
             const activeIds = new Set(currentTrips.map(t => t.trip.tripId));
 
@@ -487,7 +493,10 @@ function findPathSegment(posA, posB, availableShapes) {
 async function indexShapesByRoute(shapes) {
     const idx = {};
     if (shapes && shapes.features) {
+        let yieldCounter = 0;
         for (let i = 0; i < shapes.features.length; i++) {
+            if (++yieldCounter % 100 === 0) await yieldToMain();
+
             const f = shapes.features[i];
             const rid = f.properties.route_id;
             if (!idx[rid]) idx[rid] = [];
