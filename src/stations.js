@@ -208,8 +208,9 @@ function showStationPopup(features, layer) {
         now.getMinutes() * 60 +
         now.getSeconds();
 
-    let content = `<div style="min-width: 250px;">
-        <h3 style="margin-top:0; margin-bottom:5px; padding-bottom:5px;">${name}</h3>`;
+    let content = `<div class="station-popup">
+        <div class="station-header">
+            <h3 class="station-title">${name}</h3>`;
 
     let dataFound = false;
     let northList = [];
@@ -230,19 +231,18 @@ function showStationPopup(features, layer) {
             }
         });
 
-        // Add Route Badges to Header (immediately after collecting allRoutes)
+        // Add Route Badges to Header
+        let badgesHtml = '';
         if (allRoutes.size > 0) {
-            const badges = Array.from(allRoutes).sort().map(rid => {
+            badgesHtml = Array.from(allRoutes).sort().map(rid => {
                 const color = routeConfigs[rid] ? routeConfigs[rid].color : '#666';
                 const textColor = getContrastColor(color);
-                return `<span style="background-color:${color}; color:${textColor}; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8em; margin-right:4px;">${rid}</span>`;
+                return `<span class="station-badge" style="background-color:${color}; color:${textColor};">${rid}</span>`;
             }).join('');
-            content += `<div style="margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #ddd;">${badges}</div>`;
-        } else {
-            content += `<div style="border-bottom:1px solid #ddd; margin-bottom:10px;"></div>`;
         }
+        content += `<div class="station-badges">${badgesHtml}</div></div>`; // Close Header
 
-        // Helper to find RT data
+        // Helper to find RT data (Existing Logic)
         const getRealtimeData = (tripId, routeId) => {
             if (rtState.mode !== 'REALTIME') return null;
             // 1. Strict Match
@@ -279,7 +279,6 @@ function showStationPopup(features, layer) {
                             }
                         }
                         if (best) {
-                            // console.log(`[Realtime] Matched ${tripId} with RT ${best.tripId} (Diff: ${minDiff}s)`);
                             return best;
                         }
                     }
@@ -288,7 +287,7 @@ function showStationPopup(features, layer) {
             return null;
         };
 
-        // Helper to calculate delay
+        // Helper to calculate delay (Existing Logic)
         const getTripDelay = (tripId, rt) => {
             if (!rt || !rawSchedule || !rawSchedule.routes) return 0;
             const routeTrips = rawSchedule.routes[rt.routeId];
@@ -335,6 +334,8 @@ function showStationPopup(features, layer) {
 
         northList = filterAndSort(northList);
         southList = filterAndSort(southList);
+    } else {
+        content += `</div>`; // Close Header if no data
     }
 
     // --- Alerts ---
@@ -344,7 +345,7 @@ function showStationPopup(features, layer) {
     );
 
     if (stationAlerts.length > 0) {
-        content += `<div style="background:#451a03; border:1px solid #f59e0b; border-radius:4px; padding:6px; margin-bottom:10px;">
+        content += `<div style="background:#451a03; border-bottom:1px solid #f59e0b; padding:10px;">
             <strong style="color:#fbbf24; font-size:0.8em; display:block; margin-bottom:4px;">⚠️ Service Alerts</strong>`;
 
         stationAlerts.forEach(alert => {
@@ -366,7 +367,6 @@ function showStationPopup(features, layer) {
             // Real-Time Logic
             let displayTime = t.predictedTime; // Use predicted
             let statusBadge = "";
-            let timeClass = "color:#555;";
 
             if (t.isLive) {
                 // Check if stopped at current station
@@ -374,59 +374,52 @@ function showStationPopup(features, layer) {
                 const isAtStation = Array.from(stopIds).some(baseId => rt.stopId.startsWith(baseId));
 
                 if (isAtStation) {
-                    statusBadge = `<span style="color:#ef4444; font-weight:bold; font-size:0.8em; margin-right:4px;">● At Station</span>`;
-                    timeClass = "color:#000; font-weight:bold;";
+                    statusBadge = `<span class="status-badge status-at-station">● At Station</span>`;
                 } else {
                     const delayMins = Math.round((t.predictedTime - t.time) / 60);
                     let delayText = "Live";
-                    let delayColor = "#22c55e"; // Green
+                    // let delayColorClass = "status-live"; 
 
                     if (delayMins > 2) {
                         delayText = `+${delayMins} min`;
-                        delayColor = "#ef4444"; // Red
+                        statusBadge = `<span class="status-badge status-delayed">${delayText}</span>`;
                     } else if (delayMins < -2) {
                         delayText = `${delayMins} min`;
+                        statusBadge = `<span class="status-badge status-live">${delayText}</span>`;
+                    } else {
+                        statusBadge = `<span class="status-badge status-live">Live</span>`;
                     }
-
-                    statusBadge = `<span style="color:${delayColor}; font-size:0.8em; margin-right:4px;">📶 ${delayText}</span>`;
                 }
             }
 
             return `
-            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.9em; margin-bottom:4px;">
-                <span style="
-                    background-color: ${color}; 
-                    color: ${textColor}; 
-                    padding: 2px 6px; 
-                    border-radius: 4px; 
-                    font-weight: bold; 
-                    min-width: 24px; 
-                    text-align: center;
-                    display: inline-block;
-                ">${routeId}</span>
-                <div style="text-align:right;">
+            <div class="arrival-row">
+                <div class="arrival-left">
+                    <span class="station-badge" style="background-color: ${color}; color: ${textColor};">${routeId}</span>
                     ${statusBadge}
-                    <span style="font-family:monospace; ${timeClass}">${formatTime(displayTime)}</span>
+                </div>
+                <div class="arrival-right">
+                    <span class="time-primary">${formatTime(displayTime)}</span>
                 </div>
             </div>`;
         };
 
-        content += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-            <div>
-                <strong style="font-size:0.75em; text-transform:uppercase; color:#888; display:block; margin-bottom:6px;">Northbound</strong>
-                ${northList.length ? northList.map(renderRow).join('') : '<div style="color:#aaa; font-size:0.8em; font-style:italic;">No trains</div>'}
+        content += `<div class="station-body">
+            <div class="station-dir-col">
+                <div class="dir-header">Northbound</div>
+                ${northList.length ? northList.map(renderRow).join('') : '<div class="no-trains">No trains nearby</div>'}
             </div>
-            <div>
-                <strong style="font-size:0.75em; text-transform:uppercase; color:#888; display:block; margin-bottom:6px;">Southbound</strong>
-                ${southList.length ? southList.map(renderRow).join('') : '<div style="color:#aaa; font-size:0.8em; font-style:italic;">No trains</div>'}
+            <div class="station-dir-col">
+                <div class="dir-header">Southbound</div>
+                ${southList.length ? southList.map(renderRow).join('') : '<div class="no-trains">No trains nearby</div>'}
             </div>
         </div>`;
 
     } else {
-        content += `<div style="color:#666; font-size:0.8em; margin-top:5px;"><em>No schedule data available.</em></div>`;
+        content += `<div class="station-body"><div class="no-trains">No schedule data available.</div></div>`;
     }
 
-    content += `</div>`;
+    content += `</div>`; // Close station-popup
 
-    layer.bindPopup(content).openPopup();
+    layer.bindPopup(content, { maxWidth: 400, minWidth: 280 }).openPopup();
 }

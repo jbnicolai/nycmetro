@@ -215,10 +215,147 @@ h2 {
 }
 
 /* Leaflet Customizations */
+/* Leaflet Customizations */
 .leaflet-popup-content-wrapper {
-    background: var(--bg-color);
+    background: var(--sidebar-bg);
+    /* Dark Glass */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--sidebar-border);
     color: var(--text-color);
-    border-radius: 8px;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    padding: 0;
+    /* Remove default padding, handle in content */
+}
+
+.leaflet-popup-content {
+    margin: 0;
+    line-height: 1.4;
+}
+
+.leaflet-popup-tip {
+    background: var(--sidebar-bg);
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+    color: #94a3b8;
+    top: 12px;
+    right: 12px;
+    font: 20px/20px Tahoma, Verdana, sans-serif;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+    color: #fff;
+}
+
+/* Station Popup Content */
+.station-popup {
+    min-width: 280px;
+    font-family: var(--font-family);
+}
+
+.station-header {
+    padding: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.station-title {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.station-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.station-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    display: inline-block;
+    min-width: 24px;
+    text-align: center;
+}
+
+.station-body {
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.station-dir-col {
+    display: flex;
+    flex-direction: column;
+}
+
+.dir-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.arrival-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 0.9em;
+}
+
+.arrival-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.arrival-right {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.time-primary {
+    color: #fff;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.status-badge {
+    font-size: 0.75em;
+    font-weight: 600;
+}
+
+.status-at-station {
+    color: #ef4444;
+    /* Red-500 */
+}
+
+.status-live {
+    color: #22c55e;
+    /* Green-500 */
+}
+
+.status-delayed {
+    color: #f59e0b;
+    /* Amber-500 */
+}
+
+.no-trains {
+    color: #64748b;
+    font-style: italic;
+    font-size: 0.8em;
 }
 
 .leaflet-popup-tip {
