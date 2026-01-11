@@ -18,9 +18,6 @@ async function runApp() {
     const map = initMap();
     layers.citibike.addTo(map);
 
-    // [MOD] triggerLocate moved later in runApp to avoid jank during initial render
-
-
     createLegend(map, layers, async (color, checked) => {
         if (!checked) {
             layers.citibike.eachLayer(layer => {
@@ -32,23 +29,17 @@ async function runApp() {
         }
 
         const stations = await fetchCitibikeStations();
-
-        // Calculate Stats
         const total = stations.length;
         const empty = stations.filter(s => s.num_bikes_available === 0).length;
         const withEbikes = stations.filter(s => s.num_ebikes_available > 0).length;
-
-        // "Normal Bikes Only": Stations with bikes but NO e-bikes
         const normalOnlyStations = stations.filter(s => {
             const hasBikes = s.num_bikes_available > 0;
             const hasEbikes = s.num_ebikes_available > 0;
             return hasBikes && !hasEbikes;
         }).length;
 
-        // GBFS Spec: num_bikes_available includes e-bikes
         const totalBikes = stations.reduce((acc, s) => acc + s.num_bikes_available, 0);
 
-        // Update Panel
         StatusPanel.update("citibike-total", `${total} Loaded`);
         StatusPanel.update("citi-empty", empty);
         StatusPanel.update("citi-normal-only", normalOnlyStations);
@@ -61,7 +52,6 @@ async function runApp() {
         StatusPanel.log(`Fetched ${total} stations. ${totalBikes} bikes avail.`);
 
         const filtered = filterCitibikeStations(stations, color);
-
         filtered.forEach(s => {
             const marker = L.circleMarker([s.lat, s.lon], {
                 radius: 4,
@@ -70,7 +60,7 @@ async function runApp() {
                 weight: 1,
                 opacity: 1,
                 fillOpacity: 0.8,
-                citibikeType: color // Tag for removal
+                citibikeType: color
             });
 
             marker.bindPopup(`
@@ -84,83 +74,44 @@ async function runApp() {
         });
     });
 
-
-
     try {
         window.startupMetrics = { fetchStart: performance.now() };
         console.time("StartupToLive");
 
-        // 1. Critical Fetch: Start EVERYTHING in parallel immediately
+        // PHASE 1: Eager Prefetch
         console.log("Starting eager data prefetch...");
-        const dataPromises = {
-            config: fetchConfig().catch(e => { throw new Error("Config Fetch Failed: " + e) }),
-            stations: fetch('./data/subway-stations.geojson').then(r => r.json()).catch(e => { throw new Error("Stations Fetch Failed: " + e) }),
-            neighborhoods: fetch('./data/nyc-neighborhoods.geojson').then(r => r.json()).catch(e => { throw new Error("Neighborhoods Fetch Failed: " + e) }),
-            schedule: fetch('/api/schedule').then(r => r.json()).catch(e => { throw new Error("Schedule Fetch Failed: " + e) }),
-            realtime: initRealtime().catch(e => { throw new Error("Realtime Init Failed: " + e) })
-        };
+        const dataPromises = prefetchData();
 
         const mapReady = new Promise(resolve => {
             let fired = false;
             const done = () => { if (!fired) { fired = true; resolve(performance.now()); } };
             map.once('moveend', done);
-            setTimeout(done, 4000); // Guard timeout
+            setTimeout(done, 4000);
         });
 
-        // 2. Trigger Auto-Locate IMMEDIATELY 
+        // Trigger Auto-Locate immediately 
         if (window.triggerLocate) {
             window.triggerLocate();
         }
 
-        // Resolve core data (Parallel with map animation)
+        // Resolve core UI data
         const [config, stationsRes, neighborhoodsRes] = await Promise.all([
             dataPromises.config,
             dataPromises.stations,
             dataPromises.neighborhoods
         ]);
         window.startupMetrics.coreDataReady = performance.now();
-        console.log(`Core data ready in ${Math.round(window.startupMetrics.coreDataReady - window.startupMetrics.fetchStart)}ms`);
 
         StatusPanel.init();
         StatusPanel.update("routes", Object.keys(config.routes).length);
 
-        // --- PHASE 2: UI Transitions & Background Rendering ---
-        // We render these even if the map is still zooming! 
-        // Leaflet's Canvas handles this gracefully.
+        // PHASE 2: Static Layer Initialization
+        await initStaticLayers(map, config, stationsRes, neighborhoodsRes);
 
-        // Neighborhoods
-        L.geoJSON(neighborhoodsRes, {
-            style: { color: '#38bdf8', weight: 1, opacity: 0.3, fillColor: '#0f172a', fillOpacity: 0.1 },
-            pane: 'neighborhoodsPane'
-        }).addTo(layers.neighborhoods);
-
-        // Subway Lines & Legend
-        const lineResult = await renderSubwayLines(map, config.shapes, config.routes);
-        let renderedShapes = lineResult || config.shapes;
-        updateLegendLines(config.routes, toggleRouteLayerBatch);
-
-        // Stations
-        renderStations(stationsRes, layers.stations, null, config.routes);
-        StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
-
-        // Utility: Smoothly Reveal Panes
-        const reveal = (paneName) => {
-            const pane = map.getPane(paneName + 'Pane');
-            if (pane) {
-                pane.classList.remove('layer-hidden');
-                pane.classList.add('layer-visible');
-            }
-        };
-
-        // Reveal background layers early
-        setTimeout(() => reveal('neighborhoods'), 100);
-        setTimeout(() => reveal('routes'), 300);
-
-        // --- OPTIMIZATION: Start fading overlay WHILE map is still settling ---
+        // OPTIMIZATION: Fade overlay while map settles
         const loadingOverlay = document.getElementById('loading-overlay');
         const trainLoader = document.getElementById('train-loading');
 
-        // Wait at least 1s for the zoom to start feeling "smooth" but reveal map before it's totally done
         setTimeout(() => {
             if (loadingOverlay) {
                 loadingOverlay.classList.add('fade-out');
@@ -171,26 +122,22 @@ async function runApp() {
         // Wait for Map to settle 
         await mapReady;
         window.startupMetrics.mapReady = performance.now();
-        console.log(`[Metric] Map ready in ${Math.round(window.startupMetrics.mapReady - window.startupMetrics.fetchStart)}ms`);
 
-        // PHASE 3: Synchronized Live Activation
+        // PHASE 3: Live System Coordination
         if (trainLoader) trainLoader.classList.remove('hidden');
 
-        StatusPanel.log(`[${Math.round(performance.now() - window.startupMetrics.fetchStart)}ms] Syncing Live Data...`);
+        StatusPanel.log("Syncing Live Data...");
         const [scheduleRes] = await Promise.all([dataPromises.schedule, dataPromises.realtime]);
         window.startupMetrics.liveDataReady = performance.now();
 
-        // Re-render stations with schedule data and fade them in
+        // Re-render stations with schedule and start animation
         layers.stations.clearLayers();
-        renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
-        reveal('stations');
+        await renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
+        revealPane(map, 'stations');
 
-        // Start Animation
-        StatusPanel.log(`[${Math.round(performance.now() - window.startupMetrics.fetchStart)}ms] Starting Animation...`);
-        if (trainLoader) trainLoader.classList.remove('hidden'); // Ensure spinner is active during heavy scan
-        await startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
-        reveal('trains');
-
+        StatusPanel.log("Starting Animation...");
+        await startTrainAnimation(config.shapes, config.routes, scheduleRes, visibilityFilter);
+        revealPane(map, 'trains');
 
         window.startupMetrics.liveAnimationStart = performance.now();
         console.timeEnd("StartupToLive");
@@ -201,6 +148,44 @@ async function runApp() {
     } catch (err) {
         console.error("CRITICAL BOOT ERROR:", err);
         alert(`CRITICAL ERROR:\n${err.message}`);
+    }
+}
+
+function prefetchData() {
+    return {
+        config: fetchConfig().catch(e => { throw new Error("Config Fetch Failed: " + e) }),
+        stations: fetch('./data/subway-stations.geojson').then(r => r.json()).catch(e => { throw new Error("Stations Fetch Failed: " + e) }),
+        neighborhoods: fetch('./data/nyc-neighborhoods.geojson').then(r => r.json()).catch(e => { throw new Error("Neighborhoods Fetch Failed: " + e) }),
+        schedule: fetch('/api/schedule').then(r => r.json()).catch(e => { throw new Error("Schedule Fetch Failed: " + e) }),
+        realtime: initRealtime().catch(e => { throw new Error("Realtime Init Failed: " + e) })
+    };
+}
+
+async function initStaticLayers(map, config, stationsRes, neighborhoodsRes) {
+    // Neighborhoods
+    L.geoJSON(neighborhoodsRes, {
+        style: { color: '#38bdf8', weight: 1, opacity: 0.3, fillColor: '#0f172a', fillOpacity: 0.1 },
+        pane: 'neighborhoodsPane'
+    }).addTo(layers.neighborhoods);
+
+    // Subway Lines
+    await renderSubwayLines(map, config.shapes, config.routes);
+    updateLegendLines(config.routes, toggleRouteLayerBatch);
+
+    // Initial Static Stations (no schedule yet)
+    await renderStations(stationsRes, layers.stations, null, config.routes);
+    StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
+
+    // Reveal background layers
+    setTimeout(() => revealPane(map, 'neighborhoods'), 100);
+    setTimeout(() => revealPane(map, 'routes'), 300);
+}
+
+function revealPane(map, paneName) {
+    const pane = map.getPane(paneName + 'Pane');
+    if (pane) {
+        pane.classList.remove('layer-hidden');
+        pane.classList.add('layer-visible');
     }
 }
 
