@@ -89,21 +89,24 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 
 ## Roadmap
 
-### Performance
-- [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
+### Visuals & UX
+- [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
 - [ ] **Mobile Zoom**: Fix map zooming to avoid scaling the UI.
 - [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
-- [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
 - [ ] **Browser History**: Implement back/undo navigation for station and train selections.
 - [ ] **Deep Linking**: Support deep linking to trains/stations via URL hash.
+
+### Compliance & Architecture
+- [ ] **MTA API Compliance**: Download API feeds server-side and serve to clients via a proxy. Implement an on-demand mechanism with cross-user caching to minimize server costs and MTA load.
+- [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
 - [ ] **Smart Matching**: Improve ID matching algorithm (fuzzy route/direction matching) to link more live trains to the schedule.
+- [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
+- [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
 
 ## Known Issues
 - **Ghost Trains**: Some real-time trips may not match perfectly to the static schedule, resulting in "Unknown" destinations or missing stops.
 - **Incorrect Train Instance Selection**: Station links for upcoming trains do not always center on the correct train instance (e.g., selecting a train further along the route instead of the one about to arrive).
-
-## Future Improvements
-- [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
+- **Realtime Reload Jitter**: Every time realtime data is reloaded, all trains 'jump' to a new position as their delay values are updated abruptly.
 
 ## Development Workflow
 > [!IMPORTANT]
