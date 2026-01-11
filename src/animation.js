@@ -169,23 +169,9 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                             sliced.geometry.coordinates.reverse();
                         }
 
-                        // Simplify to remove micro-jitter/stair-stepping
-                        // Wrap in try-catch because turf.simplify can crash on very short/degenerate lines
-                        try {
-                            // Only simplify if we have enough points to matter
-                            if (sliced.geometry.coordinates.length > 2) {
-                                const simpleSliced = window.turf.simplify(sliced, { tolerance: 0.00005, highQuality: false });
-                                train.cachedPath = simpleSliced;
-                                train.cachedLength = window.turf.length(simpleSliced);
-                            } else {
-                                train.cachedPath = sliced;
-                                train.cachedLength = window.turf.length(sliced);
-                            }
-                        } catch (err) {
-                            console.warn("Simplification failed, using original slice", err);
-                            train.cachedPath = sliced;
-                            train.cachedLength = window.turf.length(sliced);
-                        }
+                        // Simplification removed to prevent jitter
+                        train.cachedPath = sliced;
+                        train.cachedLength = window.turf.length(sliced);
                     }
                 } catch (e) {
                     console.warn("Slice failed", e);
@@ -234,6 +220,12 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                 });
 
                 marker = L.marker(latLng, { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
+
+                // Persist cache state to the new marker
+                marker.segmentId = train.segmentId;
+                marker.cachedPath = train.cachedPath;
+                marker.cachedLength = train.cachedLength;
+
                 activeMarkers[trip.tripId] = marker;
 
                 marker.bindPopup(function (layer) {
