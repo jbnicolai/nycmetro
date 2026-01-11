@@ -11,6 +11,7 @@ COPY server.py .
 COPY src/ ./src/
 COPY data/ ./data/
 COPY scripts/ ./scripts/
+COPY assets/ ./assets/
 
 # Install Dependencies
 COPY requirements.txt .

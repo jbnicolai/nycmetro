@@ -1,10 +1,4 @@
 # NYC Real-Time Transit Map
-
-> [!IMPORTANT]
-> **Agent Instructions / Development Rules**:
-> 1. **DO NOT PUSH** changes to the remote repository without explicit user permission.
-> 2. Always verify code changes locally before asking to commit.
-
 A real-time visualization of the New York City transit system, combining MTA subway data with Citi Bike availability. The application renders train movements based on a hybrid system of static schedules and live GTFS-Realtime signal data.
 
 ![NYC Real-Time Transit Map](assets/app-screenshot.png)
@@ -95,33 +89,28 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 
 ## Roadmap
 
-### Information Hierarchy
-- [x] **Service Alerts**: Display active disruptions and reroutes in the map legend and station popups.
-- [x] **Live Train Counters**: Status panel shows the total number of scheduled vs. tracking trains.
-
-### Visualization
-- [x] **Line De-Interlacing**: Route lines are programmatically offset to prevent overlapping in high-density corridors like 8th Ave (A/C/E) and Broadway (N/Q/R/W).
-- [x] **Train Animation**: Smooth interpolation of train markers along track geometry.
-
 ### Performance
-- [x] **Payload Optimization**: Schedule data is lazily loaded and compressed.
-- [ ] **Binary Format**: Evaluation of migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing on mobile devices.
+- [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
 - [ ] **Interaction**: Double-click on a line to enter "Focus Mode" (hide all other lines).
-- [ ] **Mobile Zoom**: Fix map zooming to avoid scaling the UI (mobile bug).
-- [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability to show traffic patterns.
-- [ ] **Legend Improvements**: Controls to enable/disable all stations or select specific ones easily.
-- [ ] **Smart Filtering**: Cache Citi Bike data to avoid reloading on filter changes (~30s TTL).
-- [ ] **Load Optimization**: Further improve initial load metrics and loading UI.
+- [ ] **Mobile Zoom**: Fix map zooming to avoid scaling the UI.
+- [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
+- [ ] **Legend**: Controls to enable/disable all stations or select specific ones.
+- [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
 - [ ] **Browser History**: Implement back/undo navigation for station and train selections.
-- [ ] **Deep Linking**: Support deep linking to trains and stations via URL hash/query parameters.
-- [ ] **Render Extra Trains**: Visualize unscheduled "ghost" trains from the real-time feed.
+- [ ] **Deep Linking**: Support deep linking to trains/stations via URL hash.
 - [ ] **Smart Matching**: Improve ID matching algorithm (fuzzy route/direction matching) to link more live trains to the schedule.
+- [ ] **Location Icon**: If location data is available, show location icon by default.
 
 ## Known Issues
-- **Delay Information on Stations**: Delay information is currently not showing up on station popups; only the time is displayed.
+- **Ghost Trains**: Some real-time trips may not match perfectly to the static schedule, resulting in "Unknown" destinations or missing stops.
 
-## Future Improvements (Todo)
-- [ ] **Refactor**: Break down large files like `stations.js` and `animation.js` into smaller, more manageable modules.
+## Future Improvements
+- [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
+
+## Development Workflow
+> [!IMPORTANT]
+> **Verify before Commit**: Do not commit changes to the main branch before explicitly confirming with the user that the functionality works as expected.
+> **DO NOT PUSH**: Do not push changes to the remote repository without explicit user permission.
 
 ## Agent Learnings
 1. **Centralized Logic**: Moving shared logic (like `getMatchingTrip` in `realtime.js`) early prevents "Ghost Train" bugs where different parts of the app behave inconsistently.
