@@ -37,8 +37,27 @@ export function parseProperties(feature) {
 
 export function unixToSecondsSinceMidnight(unixParams) {
     if (!unixParams) return 0;
-    const date = new Date(unixParams * 1000);
-    return date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+    const d = new Date(unixParams * 1000);
+    // Use formatToParts for maximum robustness regardless of locale/browser
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: false
+    });
+
+    try {
+        const parts = formatter.formatToParts(d);
+        const h = parseInt(parts.find(p => p.type === 'hour').value);
+        const m = parseInt(parts.find(p => p.type === 'minute').value);
+        const s = parseInt(parts.find(p => p.type === 'second').value);
+        return h * 3600 + m * 60 + s;
+    } catch (e) {
+        console.error("Time calculation failure:", e);
+        // Fallback to local if NYC fails (better than NaN)
+        return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+    }
 }
 
 export function getDelayInSeconds(rt, scheduledStop) {
@@ -67,3 +86,12 @@ export function getContrastColor(hexColor) {
     const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
     return (yiq >= 128) ? '#000' : '#fff';
 }
+
+export const yieldToMain = () => new Promise(r => setTimeout(r, 0));
+
+/** Normalizes route IDs (e.g. "01" -> "1") for cross-feed consistency */
+export const normId = (id) => {
+    if (!id) return "";
+    const s = String(id);
+    return s.startsWith('0') && s.length > 1 ? s.substring(1) : s;
+};
