@@ -243,17 +243,36 @@ export async function renderSubwayLines(map, shapes, routes) {
 }
 
 export function toggleRouteLayer(routeId, show) {
-    // Update Visibility Set
-    if (show) {
-        visibilityFilter.delete(routeId);
-    } else {
-        visibilityFilter.add(routeId);
-    }
+    toggleRouteLayerBatch([routeId], show);
+}
 
-    // Update Map Layers
-    if (layers.routeLayers[routeId]) {
-        show ? layers.routeLayers[routeId].addTo(layers.routes) : layers.routes.removeLayer(layers.routeLayers[routeId]);
-    }
+export function toggleRouteLayerBatch(routeIds, show) {
+    // 1. Update Visibility Filter Set
+    routeIds.forEach(id => {
+        if (show) visibilityFilter.delete(id);
+        else visibilityFilter.add(id);
+    });
+
+    // 2. Batch Update Layers (Use requestAnimationFrame if list is huge)
+    // For < 50 items, direct manipulation is fine. For "Show All", we might want to defer.
+
+    // We'll trust Leaflet's internal batching for now, but avoid layout thrashing 
+    // by doing all adds/removes in one go.
+
+    routeIds.forEach(routeId => {
+        const layer = layers.routeLayers[routeId];
+        if (!layer) return;
+
+        const isOnMap = layers.routes.hasLayer(layer);
+
+        if (show && !isOnMap) {
+            layers.routes.addLayer(layer);
+        } else if (!show && isOnMap) {
+            layers.routes.removeLayer(layer);
+        }
+    });
+
+    // 3. Force Train Animation Update (Optional, usually handled by next frame loop checking visibilityFilter)
 }
 
 function validateCoords(coords) {

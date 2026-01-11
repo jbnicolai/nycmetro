@@ -1,5 +1,5 @@
 import './logger.js';
-import { initMap, renderSubwayLines, toggleRouteLayer, layers, visibilityFilter } from './map.js';
+import { initMap, renderSubwayLines, toggleRouteLayer, toggleRouteLayerBatch, layers, visibilityFilter } from './map.js';
 import { fetchConfig } from './api.js';
 import { renderStations } from './stations.js';
 import { createLegend, updateLegendLines } from './legend.js';
@@ -125,7 +125,7 @@ async function runApp() {
 
         // Update Legend
         try {
-            updateLegendLines(config.routes, toggleRouteLayer);
+            updateLegendLines(config.routes, toggleRouteLayerBatch);
         } catch (e) { console.error("Legend Update Failed", e); }
 
         // Init Alerts
