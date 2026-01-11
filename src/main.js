@@ -125,6 +125,7 @@ async function runApp() {
             loadingOverlay.classList.add('fade-out');
             setTimeout(() => loadingOverlay.style.display = 'none', 500);
         }
+        if (trainLoader) trainLoader.classList.remove('hidden');
 
         // Neighborhoods
         L.geoJSON(neighborhoodsRes, {
@@ -148,43 +149,39 @@ async function runApp() {
         StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
 
 
-        // 4. Trigger Auto-Locate NOW (After visual layers are on map but before heavy schedule)
-        if (window.triggerLocate) {
-            window.triggerLocate();
+        // 5. Synchronized Data Loading: Schedule + Real-time
+        StatusPanel.log("Loading Schedule & Real-time data...");
+        console.time("HeavyLoading");
+
+        try {
+            const [scheduleRes] = await Promise.all([
+                fetch('/api/schedule').then(r => r.json()),
+                initRealtime() // Also fetches first RT payload
+            ]);
+            console.timeEnd("HeavyLoading");
+            StatusPanel.log("Data synchronized. Starting engines...");
+
+            // Re-render stations with schedule data to enable popups matches
+            layers.stations.clearLayers();
+            renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
+
+            // Start Animation
+            console.log("Starting animation with filter:", visibilityFilter);
+            startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
+
+            // --- PHASE 3 COMPLETE: Hide Train Loader ---
+            if (trainLoader) {
+                trainLoader.classList.add('hidden');
+            }
+
+        } catch (e) {
+            console.warn("Synchronized Loading Failed", e);
+            StatusPanel.log("Data synchronization failed.");
+            if (trainLoader) {
+                trainLoader.innerHTML = "<span>Sync Error</span>";
+                setTimeout(() => trainLoader.classList.add('hidden'), 3000);
+            }
         }
-
-        // 5. Lazy Fetch: Schedule (Heavy Asset)
-        StatusPanel.log("Loading Schedule...");
-        console.time("ScheduleFetch");
-        fetch('/api/schedule')
-            .then(r => r.json())
-            .then(scheduleRes => {
-                console.timeEnd("ScheduleFetch");
-                StatusPanel.log("Schedule loaded. Starting engines...");
-
-                // Re-render stations with schedule data to enable popups matches
-                layers.stations.clearLayers();
-                renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
-
-                // Start Animation
-                console.log("Starting animation with filter:", visibilityFilter);
-                startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
-
-                // Start Realtime Poller
-                initRealtime();
-
-                // --- PHASE 2 COMPLETE: Hide Train Loader ---
-                if (trainLoader) trainLoader.classList.add('hidden');
-
-            })
-            .catch(e => {
-                console.warn("Schedule Fetch Failed", e);
-                StatusPanel.log("Schedule failed to load.");
-                if (trainLoader) {
-                    trainLoader.innerHTML = "<span>Schedule Error</span>";
-                    setTimeout(() => trainLoader.classList.add('hidden'), 3000);
-                }
-            });
 
     } catch (err) {
         // If critical fetch fails (Map Config/Stations)
