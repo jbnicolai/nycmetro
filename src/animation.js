@@ -1,8 +1,8 @@
 
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
-import { formatTime } from './utils.js';
-import { rtState } from './realtime.js';
+import { formatTime, getDelayInSeconds } from './utils.js';
+import { rtState, getMatchingTrip } from './realtime.js';
 
 let activeMarkers = {}; // tripId -> Marker
 let activeTripIds = new Set(); // tripId set for stats
@@ -20,6 +20,22 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
     // Clear existing
     layers.trains.clearLayers();
     activeMarkers = {};
+
+    // Expose Global Helper
+    window.flyToTrain = (tripId) => {
+        const marker = activeMarkers[tripId];
+        if (marker) {
+            const ll = marker.getLatLng();
+            const map = marker._map;
+            if (map) {
+                map.flyTo(ll, 15, { animate: true, duration: 1.2 });
+                // Slight delay to allow flyTo to start
+                setTimeout(() => marker.openPopup(), 400);
+            }
+        } else {
+            console.warn("Train not found or not active:", tripId);
+        }
+    };
 
     if (!turf) {
         console.error("Turf.js not found! Animation disabled.");
@@ -108,13 +124,17 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                 let effectiveTime = secondsSinceMidnight;
                 let isRealtime = false;
 
-                if (useRealtime && rtState.trips.has(trip.tripId)) {
-                    const rt = rtState.trips.get(trip.tripId);
-                    const scheduledStop = trip.stops.find(s => s.id === rt.stopId);
-                    if (scheduledStop && rt.time) {
-                        const delay = rt.time - scheduledStop.time;
-                        effectiveTime -= delay;
-                        isRealtime = true;
+                if (useRealtime) {
+                    const rt = getMatchingTrip(trip.tripId, routeId);
+                    if (rt) {
+                        const scheduledStop = trip.stops.find(s => s.id === rt.stopId);
+                        if (scheduledStop && rt.time) {
+                            const delay = getDelayInSeconds(rt, scheduledStop);
+                            // effectiveTime = CurrentTime (Seconds Since Midnight) - Delay
+                            // So that when we start animation at t=effectiveTime, it matches the RT position
+                            effectiveTime -= delay;
+                            isRealtime = true;
+                        }
                     }
                 }
 
@@ -331,26 +351,53 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
     };
 
     const color = routeInfo.color || '#333';
-    const textColor = getContrastColor ? getContrastColor(color) : '#fff'; // Assume global util or fallback
+    const textColor = getContrastColor ? getContrastColor(color) : '#fff';
     const destName = getName(trip.stops[trip.stops.length - 1].id);
 
-    // Time calculations
-    const predictedNext = next.time + (delay || 0);
-    const predictedPrev = prev.time + (delay || 0);
+    // Find current index in the full list of stops
+    // 'next' is the upcoming stop object {id, time, shapeDist...}
+    let nextIndex = trip.stops.findIndex(s => s.id === next.id && s.time === next.time);
+    if (nextIndex === -1) nextIndex = 0; // Fallback
+
+    // Define range: -3 (past) to +4 (future)
+    const startIdx = Math.max(0, nextIndex - 3);
+    const endIdx = Math.min(trip.stops.length, nextIndex + 5);
+    const stopSubset = trip.stops.slice(startIdx, endIdx);
+
+    // Build Rows
+    const rowsHtml = stopSubset.map((stop, i) => {
+        const absoluteIndex = startIdx + i;
+        const isPast = absoluteIndex < nextIndex;
+        const isNext = absoluteIndex === nextIndex;
+
+        // Time Calc
+        const predictedTime = stop.time + (delay || 0);
+        const timeStr = formatTime(predictedTime);
+
+        // Styling classes
+        let rowClass = "train-stop-row";
+        if (isPast) rowClass += " stop-past";
+        if (isNext) rowClass += " stop-next";
+
+        // Station Link (FlyTo)
+        const name = getName(stop.id);
+
+        return `
+        <div class="${rowClass}" onclick="window.flyToStation('${stop.id}')">
+            <div class="train-stop-left">
+                 <div class="timeline-dot ${isNext ? 'pulse' : ''}" style="border-color:${color}; background:${isNext ? color : 'transparent'}"></div>
+                 <span class="train-stop-name">${name}</span>
+            </div>
+            <div class="train-stop-time">${timeStr}</div>
+        </div>`;
+    }).join('');
 
     let rtStatus = "";
     if (isRealtime) {
         const delayMin = Math.round((delay || 0) / 60);
         let delayText = "";
-        let delayColor = "#10b981"; // green
-
-        if (delayMin > 1) {
-            delayText = `(+${delayMin}m)`;
-            delayColor = "#ef4444"; // red
-        } else if (delayMin < -1) {
-            delayText = `(${delayMin}m)`;
-            // delayColor = "#10b981";
-        }
+        if (delayMin > 1) delayText = `<span style="color:#ef4444; margin-left:6px;">(+${delayMin} min)</span>`;
+        else if (delayMin < -1) delayText = `<span style="color:#10b981; margin-left:6px;">(${delayMin} min)</span>`;
 
         rtStatus = `
             <div class="train-realtime-badge">
@@ -358,36 +405,58 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
             </div>`;
     }
 
-    // We only create the popup content once per segment change to avoid string thrashing every frame
+    // Trip Start/End Info
+    const startStop = trip.stops[0];
+    const endStop = trip.stops[trip.stops.length - 1];
+    const startTimeStr = formatTime(startStop.time);
+    const endTimeStr = formatTime(endStop.time);
+    const startName = getName(startStop.id);
+    const endName = getName(endStop.id);
+    const duration = Math.round((endStop.time - startStop.time) / 60);
+
     const content = `
-    <div class="train-popup">
+    <div class="train-popup expanded-popup">
         <div class="train-header">
-            <div class="station-dir-col">
-                <div class="train-title-row">
-                    <span class="train-route-badge" style="background:${color}; color:${textColor};">
-                        ${routeInfo.short_name}
-                    </span>
-                    <span style="font-weight:bold; color:#f1f5f9; font-size:1.1em;">Train</span>
-                </div>
-                <span class="train-dest">To ${destName}</span>
+            <div class="train-title-row">
+                <span class="train-route-badge" style="background:${color}; color:${textColor};">${routeInfo.short_name}</span>
+                <span class="train-dest-large">To ${destName}</span>
             </div>
             ${rtStatus}
         </div>
         
-        <div class="train-info-grid">
-            <!-- Next Station -->
-            <span class="train-info-label">Next</span>
-            <span class="train-station-name">${getName(next.id)}</span>
-            <span class="train-time">${formatTime(predictedNext)}</span>
+        <div class="train-timeline">
+            ${rowsHtml}
+        </div>
 
-            <!-- Previous Station -->
-            <span class="train-info-label">Prev</span>
-            <span class="train-station-name" style="color:#94a3b8;">${getName(prev.id)}</span>
-            <span class="train-time" style="color:#94a3b8;">${formatTime(predictedPrev)}</span>
+        <div class="train-footer">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span style="color:#94a3b8;">Start: 
+                    <a href="#" onclick="event.preventDefault(); window.flyToStation('${startStop.id}');" class="station-link" style="color:#cbd5e1; font-weight:normal;">${startName}</a>
+                </span>
+                <span style="color:#94a3b8;">${startTimeStr}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span style="color:#94a3b8;">End: 
+                    <a href="#" onclick="event.preventDefault(); window.flyToStation('${endStop.id}');" class="station-link" style="color:#cbd5e1; font-weight:normal;">${endName}</a>
+                </span>
+                <span style="color:#94a3b8;">${endTimeStr}</span>
+            </div>
+            <div style="display:flex; justify-content:center; margin-top:8px; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
+                <span style="color:#64748b; font-size:0.9em;">Duration: ${duration} min</span>
+            </div>
         </div>
     </div>`;
 
-    marker.bindPopup(content, { minWidth: 260 });
+    if (marker.getPopup()) {
+        marker.setPopupContent(content);
+    } else {
+        marker.bindPopup(content, {
+            className: 'train-leaflet-popup',
+            minWidth: 340,
+            maxWidth: 360,
+            autoPan: false
+        });
+    }
 }
 
 // Helper (duplicated from stations.js, ideally shared)
