@@ -47,25 +47,30 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 
         // Stats: FPS
         frameCount++;
+        // Calculate time in seconds since midnight (NYC Time)
+        // We use toLocaleString to get NYC time components regardless of browser timezone
+        const nycTimeStr = now.toLocaleString("en-US", {
+            timeZone: "America/New_York",
+            hour12: false,
+            hour: "numeric",
+            minute: "numeric",
+            second: "numeric"
+        });
+
+        // Parse "HH:MM:SS" or "24:00:00"
+        const [h, m, s] = nycTimeStr.split(':').map(Number);
+        const ms = now.getMilliseconds() / 1000;
+
+        const secondsSinceMidnight = (h * 3600) + (m * 60) + s + ms;
+
+        // Also update status panel with NYC time
         if (nowMs - lastFpsUpdate >= 1000) {
             StatusPanel.update("fps", frameCount);
             StatusPanel.update("trains", Object.keys(activeMarkers).length);
-            // Calculate time of day in seconds
-            const secondsToday = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
-            StatusPanel.update("time", formatTime(secondsToday));
+            StatusPanel.update("time", formatTime(secondsSinceMidnight));
             lastFpsUpdate = nowMs;
             frameCount = 0;
         }
-
-        // Calculate time in seconds since midnight (handling ms)
-        // Note: Schedule sometimes goes > 86400 for next-day trips (e.g. 25:00:00)
-        // But our current system mostly just looks at today's window.
-        // We will assume 'now' is the truth for today.
-        const secondsSinceMidnight =
-            (now.getHours() * 3600) +
-            (now.getMinutes() * 60) +
-            now.getSeconds() +
-            (now.getMilliseconds() / 1000);
 
         // 1. Identify Valid Trips & Update Positions
         const activeTripIds = new Set();

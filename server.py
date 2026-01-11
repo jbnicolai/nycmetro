@@ -78,9 +78,17 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             
             if SCHEDULE_CACHE:
-                # Calculate time window (Now - 10m to Now + 4h)
-                now = datetime.datetime.now()
-                # Midnight for today
+                # Calculate time window using NYC time
+                try:
+                    from zoneinfo import ZoneInfo
+                    tz = ZoneInfo("America/New_York")
+                except ImportError:
+                    # Fallback for older python (though 3.11 is used)
+                    # Simple offset for EST/EDT (imperfect but better than UTC)
+                    tz = datetime.timezone(datetime.timedelta(hours=-4))
+                
+                now = datetime.datetime.now(tz)
+                # Midnight for today in NYC
                 midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 seconds_since_midnight = (now - midnight).total_seconds()
                 
