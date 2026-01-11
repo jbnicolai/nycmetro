@@ -112,3 +112,13 @@ python3 scripts/update_data.py
 ```
 *Note: This requires `protobuf` or other deps? No, the current script is zero-dep standard library!*
 
+---
+
+## 🔮 Roadmap & Backlog
+
+The following improvements are planned for future releases:
+
+- [ ] **Real-Time GTFS-RT Integration**: Currently, the map uses static schedules. Future versions should consume the MTA's GTFS-Realtime feed (protobuf) to show live delays, actual train positions, and service alerts.
+- [ ] **Improved Line Rendering**: Visual polish to prevent overlapping train lines from obscuring each other in dense areas (Deinterlacing separate tracks).
+- [ ] **Search Functionality**: Ability to search for specific stations or routes.
+
