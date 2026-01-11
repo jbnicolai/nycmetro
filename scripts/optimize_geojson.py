@@ -24,14 +24,32 @@ def optimize_file(filepath):
         
         if 'features' in data:
             for feature in data['features']:
-                # 1. Strip Properties
+                # 1. Strip Properties (But extract useful data first)
                 props = feature.get('properties', {})
+                desc = props.get('description', '')
+                
+                # Parse Socrata HTML Description for Name and Line
+                # Format is: <span class="atr-name">NAME</span>:</strong> <span class="atr-value">Values</span>
+                if desc:
+                    import re
+                    # Extract Name
+                    name_match = re.search(r'<span class="atr-name">NAME</span>:</strong> <span class="atr-value">([^<]+)</span>', desc)
+                    if name_match:
+                        props['name'] = name_match.group(1).strip()
+                    
+                    # Extract Line
+                    line_match = re.search(r'<span class="atr-name">LINE</span>:</strong> <span class="atr-value">([^<]+)</span>', desc)
+                    if line_match:
+                        props['lines'] = line_match.group(1).strip()
+                
                 if 'description' in props:
                     del props['description']
                 
-                # Ensure name exists (fallback if needed, though usually present)
-                # (Optional: Clean up other unused props like 'url', 'line', etc if we confirm unused)
-                
+                # Clean up other typically unused Socrata fields
+                for key in ['url', 'objectid', 'geo_id_ir', 'geometry_name']:
+                    if key in props:
+                        del props[key]
+
                 feature['properties'] = props
 
                 # 2. Round Coordinates
