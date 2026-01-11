@@ -80,23 +80,26 @@ async function runApp() {
     });
 
     try {
-        const [config, stationsRes, neighborhoodsRes, scheduleRes] = await Promise.all([
+        // 1. Critical Fetch: Core Map Data (Parallel)
+        console.time("CoreFetch");
+        const [config, stationsRes, neighborhoodsRes] = await Promise.all([
             fetchConfig().catch(e => { throw new Error("Config Fetch Failed: " + e) }),
             fetch('./data/subway-stations.geojson').then(r => r.json()).catch(e => { throw new Error("Stations Fetch Failed: " + e) }),
             fetch('./data/nyc-neighborhoods.geojson').then(r => r.json()).catch(e => { throw new Error("Neighborhoods Fetch Failed: " + e) }),
-            fetch('/api/schedule').then(r => r.json()).catch(e => { console.warn("Schedule Fetch Failed", e); return null; })
         ]);
+        console.timeEnd("CoreFetch");
 
         StatusPanel.init();
-        StatusPanel.log("Data loaded successfully.");
+        StatusPanel.log("Core data loaded. Rendering map...");
         StatusPanel.update("routes", Object.keys(config.routes).length);
 
-        // 1. Neighborhoods (Quick inline render for now)
+        // 2. Render Static Layers Immediately
+        // Neighborhoods
         L.geoJSON(neighborhoodsRes, {
             style: { color: '#38bdf8', weight: 1, opacity: 0.3, fillColor: '#0f172a', fillOpacity: 0.1 }
         }).addTo(layers.neighborhoods);
 
-        // 2. Lines (from Backend)
+        // Subway Lines
         let renderedShapes = config.shapes; // Fallback
         try {
             console.log("Rendering Subway Lines...");
@@ -104,33 +107,44 @@ async function runApp() {
             if (result) renderedShapes = result;
         } catch (e) {
             console.error("Line Rendering Failed:", e);
-            // Don't throw, just use original shapes if render fails
         }
 
-        // 3. Stations (from Local)
-        try {
-            StatusPanel.log("Rendering Stations...");
-            renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
-            StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
-        } catch (e) { throw new Error("Station Rendering Failed: " + e.message); }
-
-        // 4. Update Legend
+        // Update Legend
         try {
             updateLegendLines(config.routes, toggleRouteLayer);
         } catch (e) { console.error("Legend Update Failed", e); }
 
-        // 5. Start Animation
+
+        // 3. Initial Station Render (Visuals only, no schedule yet)
         try {
-            if (scheduleRes) {
+            StatusPanel.log("Rendering Stations (Visual)...");
+            renderStations(stationsRes, layers.stations, null, config.routes);
+            StatusPanel.update("stations", stationsRes.features ? stationsRes.features.length : 0);
+        } catch (e) { throw new Error("Station Rendering Failed: " + e.message); }
+
+
+        // 4. Lazy Fetch: Schedule (Heavy Asset)
+        StatusPanel.log("Loading Schedule...");
+        console.time("ScheduleFetch");
+        fetch('/api/schedule')
+            .then(r => r.json())
+            .then(scheduleRes => {
+                console.timeEnd("ScheduleFetch");
+                StatusPanel.log("Schedule loaded. Starting engines...");
+
+                // Re-render stations with schedule data to enable popups matches
+                layers.stations.clearLayers();
+                renderStations(stationsRes, layers.stations, scheduleRes, config.routes);
+
+                // Start Animation
                 console.log("Starting animation with filter:", visibilityFilter);
-                // Use renderedShapes so trains snap to visual lines
                 startTrainAnimation(renderedShapes, config.routes, scheduleRes, visibilityFilter);
-            } else {
-                console.warn("Schedule fetch failed or returned null, skipping animation.");
-            }
-        } catch (e) {
-            console.error("Animation Failed", e);
-        }
+
+            })
+            .catch(e => {
+                console.warn("Schedule Fetch Failed", e);
+                StatusPanel.log("Schedule failed to load.");
+            });
 
     } catch (err) {
         // If critical fetch fails
