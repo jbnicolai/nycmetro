@@ -114,6 +114,8 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - [ ] **Load Optimization**: Further improve initial load metrics and loading UI.
 - [ ] **Browser History**: Implement back/undo navigation for station and train selections.
 - [ ] **Deep Linking**: Support deep linking to trains and stations via URL hash/query parameters.
+- [ ] **Render Extra Trains**: Visualize unscheduled "ghost" trains from the real-time feed.
+- [ ] **Smart Matching**: Improve ID matching algorithm (fuzzy route/direction matching) to link more live trains to the schedule.
 
 ## Known Issues
 - **Delay Information on Stations**: Delay information is currently not showing up on station popups; only the time is displayed.
