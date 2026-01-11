@@ -19,95 +19,60 @@ SCHEDULE_FILE = "data/subway_schedule.json"
 ENV = os.environ.get('ENV', 'development')
 
 MTA_ALERTS_URL = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeed_id=c"
-ALERTS_CACHE = []
-alerts_lock = Lock()
-
-# --- Realtime Cache ---
-RT_CACHE = {
-    "data": None,
+ALERTS_CACHE = {
+    "data": [],
     "last_updated": 0
 }
-RT_LOCK = Lock()
-
-# Load schedule into memory
-SCHEDULE_CACHE = None
-if os.path.exists(SCHEDULE_FILE):
-    print("Loading schedule into memory...")
-    try:
-        with open(SCHEDULE_FILE, 'r') as f:
-            SCHEDULE_CACHE = json.load(f)
-        
-        # Normalize Trip IDs (Strip prefix to match GTFS-RT)
-        # Static:  "AFA25GEN-1093-Weekday-00_000650_1..S03R"
-        # Realtime: "000650_1..S03R"
-        print("Normalizing Trip IDs...")
-        count = 0
-        for rid, trips in SCHEDULE_CACHE.get('routes', {}).items():
-            for trip in trips:
-                original = trip.get('tripId', "")
-                parts = original.split('_')
-                if len(parts) >= 2:
-                    # Keep last 2 parts (Time + RouteDir)
-                    trip['tripId'] = "_".join(parts[-2:])
-                    count += 1
-        print(f"Schedule loaded and normalized {count} IDs successfully.")
-
-    except Exception as e:
-        print(f"Failed to load schedule: {e}")
 
 def fetch_alerts_feed():
-    """Polls the MTA GTFS-Realtime Alerts Feed periodically."""
+    """Fetches the MTA GTFS-Realtime Alerts Feed once."""
     global ALERTS_CACHE
-    while True:
-        try:
-            print("[Alerts] Fetching feed...", flush=True)
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            resp = requests.get(MTA_ALERTS_URL, headers=headers, timeout=10)
+    try:
+        print("[Alerts] Fetching feed...", flush=True)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        resp = requests.get(MTA_ALERTS_URL, headers=headers, timeout=10)
+        
+        if resp.status_code == 200:
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(resp.content)
             
-            if resp.status_code == 200:
-                feed = gtfs_realtime_pb2.FeedMessage()
-                feed.ParseFromString(resp.content)
-                
-                new_alerts = []
-                for entity in feed.entity:
-                    if entity.HasField('alert'):
-                        alert = entity.alert
-                        
-                        # Extract text (english)
-                        header_text = "Alert"
-                        if alert.header_text.translation:
-                            header_text = alert.header_text.translation[0].text
-                        
-                        description_text = ""
-                        if alert.description_text.translation:
-                            description_text = alert.description_text.translation[0].text
-
-                        # Extract affected entities (routes)
-                        affected_routes = []
-                        for sel in alert.informed_entity:
-                            if sel.route_id:
-                                affected_routes.append(sel.route_id)
-                        
-                        new_alerts.append({
-                            "id": entity.id,
-                            "header": header_text,
-                            "description": description_text,
-                            "routes": list(set(affected_routes)) # Dedupe
-                        })
-                
-                with alerts_lock:
-                    ALERTS_CACHE = new_alerts
+            new_alerts = []
+            for entity in feed.entity:
+                if entity.HasField('alert'):
+                    alert = entity.alert
                     
-                print(f"[Alerts] Updated. {len(new_alerts)} active alerts.", flush=True)
-            else:
-                print(f"[Alerts] Fetch failed: {resp.status_code}", flush=True)
-                
-        except Exception as e:
-            print(f"[Alerts] Error fetching feed: {e}", flush=True)
+                    # Extract text (english)
+                    header_text = "Alert"
+                    if alert.header_text.translation:
+                        header_text = alert.header_text.translation[0].text
+                    
+                    description_text = ""
+                    if alert.description_text.translation:
+                        description_text = alert.description_text.translation[0].text
+
+                    # Extract affected entities (routes)
+                    affected_routes = []
+                    for sel in alert.informed_entity:
+                        if sel.route_id:
+                            affected_routes.append(sel.route_id)
+                    
+                    new_alerts.append({
+                        "id": entity.id,
+                        "header": header_text,
+                        "description": description_text,
+                        "routes": list(set(affected_routes)) # Dedupe
+                    })
             
-        time.sleep(60) # Poll every minute
+            return new_alerts
+        else:
+            print(f"[Alerts] Fetch failed: {resp.status_code}", flush=True)
+            
+    except Exception as e:
+        print(f"[Alerts] Error fetching feed: {e}", flush=True)
+    
+    return None
 
 def fetch_realtime_feed():
     """Fetches and parses GTFS-RT feed from MTA in parallel."""
@@ -189,8 +154,11 @@ def fetch_realtime_feed():
     print(f"Processed {len(trips)} RT trips and {len(collected_alerts)} alerts.", flush=True)
     
     # Update Global Alerts Cache
-    with alerts_lock:
-        ALERTS_CACHE[:] = collected_alerts
+    # Note: We might get duplicate alerts from the main RT feed, so we merge or just rely on the dedicated feed.
+    # For now, let's NOT overwrite the dedicated alerts cache from here to avoid race conditions or format mismatches.
+    # If we wanted to merge, we'd need to normalize fully.
+    # with alerts_lock:
+    #    ALERTS_CACHE['data'] = collected_alerts
             
     return trips
 
@@ -373,8 +341,25 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
+            # On-Demand Caching Strategy (60s TTL)
+            now_ts = datetime.datetime.now().timestamp()
+            
+            # Simple permissive lock check (not strictly double-checked locking but fine for this scale)
+            # If multiple requests come in, worst case we fetch twice.
+            need_fetch = False
             with alerts_lock:
-                data = json.dumps(ALERTS_CACHE)
+                 if not ALERTS_CACHE['data'] or (now_ts - ALERTS_CACHE['last_updated'] > 60):
+                     need_fetch = True
+            
+            if need_fetch:
+                new_alerts = fetch_alerts_feed()
+                if new_alerts is not None:
+                    with alerts_lock:
+                        ALERTS_CACHE['data'] = new_alerts
+                        ALERTS_CACHE['last_updated'] = now_ts
+            
+            with alerts_lock:
+                data = json.dumps(ALERTS_CACHE['data'])
                 
             self.wfile.write(data.encode('utf-8'))
             
@@ -460,9 +445,7 @@ if __name__ == "__main__":
     # rt_thread = threading.Thread(target=fetch_realtime_feed, daemon=True)
     # rt_thread.start()
 
-    # Start Alerts Thread (Poller for Service Alerts)
-    # alert_thread = threading.Thread(target=fetch_alerts_feed, daemon=True)
-    # alert_thread.start()
+    # Alert Thread Removed (Now On-Demand via /api/alerts)
 
     try:
         with ReuseAddrTCPServer(("", PORT), MyHandler) as httpd:

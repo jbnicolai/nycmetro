@@ -24,7 +24,10 @@ The project employs a client-heavy architecture to minimize server load and late
     - Serves static assets (HTML/JS/CSS).
     - Acts as an API proxy for MTA Realtime Feeds to handle CORS.
     - Parses GTFS Protobuf data using `google.transit.gtfs_realtime_pb2` and converts it to JSON for the client.
-    - Implements in-memory caching for Realtime feeds (30s TTL) and Alerts (60s TTL).
+    - Serves static assets (HTML/JS/CSS).
+    - Acts as an API proxy for MTA Realtime Feeds to handle CORS.
+    - Parses GTFS Protobuf data using `google.transit.gtfs_realtime_pb2` and converts it to JSON for the client.
+    - Implements in-memory caching for Realtime feeds (30s TTL) and Alerts (60s TTL), fetching from MTA only on-demand when client requests come in.
 
 ### Frontend
 - **Framework**: Vanilla JavaScript (ES6 Modules).
@@ -97,7 +100,8 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - [ ] **Deep Linking**: Support deep linking to trains/stations via URL hash.
 
 ### Compliance & Architecture
-- [ ] **MTA API Compliance**: Download API feeds server-side and serve to clients via a proxy. Implement an on-demand mechanism with cross-user caching to minimize server costs and MTA load.
+- [x] **MTA API Compliance**: Download API feeds server-side and serve to clients via a proxy. Implement an on-demand mechanism with cross-user caching to minimize server costs and MTA load.
+- [ ] **Progressive Web App (PWA)**: Implement PWA features for offline availability of the app and subway schedule data.
 - [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
 - [ ] **Smart Matching**: Improve ID matching algorithm (fuzzy route/direction matching) to link more live trains to the schedule.
 - [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
