@@ -1,100 +1,75 @@
-# NYC Real-Time Transit Map 🚇 + 🚲
+# NYC Real-Time Transit Map
 
-A high-performance, real-time visualization of New York City's transit pulse. This application combines the massive scale of the MTA subway system with the granularity of Citibike, offering a "Simulation Anchored to Reality" driven by live signal data.
+A real-time visualization of the New York City transit system, combining MTA subway data with Citi Bike availability. The application renders train movements based on a hybrid system of static schedules and live GTFS-Realtime signal data.
 
-![Project Screenshot](assets/app-screenshot.png)
+![NYC Real-Time Transit Map](assets/app-screenshot.png)
 
-## ✨ Features
+## data-sources
+The application aggregates data from the following public APIs:
+- **MTA GTFS-Static**: Provides the base schedule, route geometries (shapes.txt), and station locations.
+- **MTA GTFS-Realtime**: Provides live updates via Protocol Buffers (Probobuf).
+    - **Feed 1, 2, 11, 16, 21**: Numbered Lines, L, SIR.
+    - **Feed 26**: A/C/E Lines.
+    - **Feed 16**: N/Q/R/W Lines.
+    - **Feed 21**: B/D/F/M Lines.
+- **Citi Bike GBFS (General Bikeshare Feed Specification)**: Provides real-time station status (bikes available, e-bikes available, docks available).
 
-*   **Hybrid Real-Time Engine**: Visualizes trains moving along accurate track geometries. Positions are interpolated from the static schedule but "snapped" to reality using live GTFS-RT signal data.
-*   **Live Citibike Docks**: Toggleable layer showing real-time bike & dock availability from the GBFS feed.
-*   **Parallel Line Rendering**: Routes are rendered with offset geometries to handle the complexity of NYC's interlining (e.g., A/C/E lines sharing tracks).
-*   **Performance First**: 
-    *   **Zero-Dependency Backend**: Pure Python standard library `http.server`.
-    *   **Vector-Based**: Uses Leaflet.js & Turf.js for smooth client-side animation.
-    *   **Smart Loading**: Initial map loads instantly; schedule data streams in asynchronously.
+## Architecture
 
----
-
-## 🚀 Quick Start
-
-### 1. Prerequisites
-*   Python 3.9+
-
-### 2. Run Locally
-We provide a helper script to set up the environment and install dependencies (`protobuf`, `requests`).
-
-```bash
-./run_dev.sh
-```
-Open [http://localhost:8001](http://localhost:8001).
-
----
-
-## 🧠 Methodology: Verified Simulation
-
-Unlike consumer maps (Google/Apple) that use Machine Learning to *predict* arrivals based on history, this engine visualizes the **Signal Truth**.
-
-| Layer | Source | Precision | Description |
-| :--- | :--- | :--- | :--- |
-| **Foundation** | **GTFS Schedule** | 📅 Planned | The official "ideal" timetable. |
-| **Reality** | **GTFS-Realtime** | 📡 Actual | Live telemetry from track signals. |
-| **User View** | **Hybrid Sim** | 🟢 Live | We run a physics simulation of the schedule, continuously time-shifting trains to match their reported live position. |
-
-*   **The "Ghost" Technique**: Every scheduled train is instantiated as a simulation object.
-*   **The "Anchor"**: We poll the [MTA API](https://api.mta.info) every 30 seconds. If a train is reported delayed (e.g., **5 minutes late**), its entire trajectory is shifted, preserving the physics of travel (speed, dwell times) while respecting the live arrival time.
-
----
-
-## 🛠️ Architecture for Developers
-
-The project uses a "Thick Client, Thin Server" architecture to maximize scalability and reduce hosting costs (runs on $5/mo instances).
+The project employs a client-heavy architecture to minimize server load and latency.
 
 ### Backend (`server.py`)
-*   **Role**: Static file server + API Gateway.
-*   **Tech**: Pure Python.
-*   **Key Dependencies**:
-    *   `gtfs-realtime-bindings`: To parse MTA Protobuf feeds.
-    *   `requests`: To fetch data from MTA.
-*   **Data Pipeline** (`scripts/update_data.py`): An ETL script that downloads the 50MB+ GTFS zip, strips unused fields (ShapeDescriptions, etc.), and generates optimized JSONs (`subway_config.json`, `subway_schedule.json`) for the client.
+- **Runtime**: Python 3.9+.
+- **Framework**: Standard Library `http.server`.
+- **Responsibilities**:
+    - Serves static assets (HTML/JS/CSS).
+    - Acts as an API proxy for MTA Realtime Feeds to handle CORS.
+    - Parses GTFS Protobuf data using `google.transit.gtfs_realtime_pb2` and converts it to JSON for the client.
+    - Implements in-memory caching for Realtime feeds (30s TTL) and Alerts (60s TTL).
 
-### Frontend (`src/`)
-*   **Tech**: Vanilla ES Modules (No Webpack/React overhead).
-*   **Core Components**:
-    *   `animation.js`: The heart of the app. Handles the simulation loop, time interpolation, and Turf.js track snapping.
-    *   `realtime.js`: The collection agent. Polls the backend buffer and computes "Delay Deltas" for the animator.
-    *   `map.js`: Leaflet controller for layer management (GeoJSON rendering).
+### Frontend
+- **Framework**: Vanilla JavaScript (ES6 Modules).
+- **Rendering Engine**: Leaflet.js.
+- **Geospatial Processing**: Turf.js (used for line slicing, train positioning, and geometry snapping).
+- **State Management**:
+    - `animation.js`: Manages the requestAnimationFrame loop. It interpolates train positions along the SVG path based on the current time and live schedule deviations.
+    - `realtime.js`: Polls the backend for trip updates and maintains a synchronization map (`tripId` -> `deviation`).
+    - `alerts.js`: Polls for service alerts and updates the UI accordingly.
 
-### Folder Structure
-```
-├── data/               # Processed JSONs (Gitignored)
-├── src/                # Frontend Source
-├── scripts/            # ETL & Maintenance Scripts
-├── server.py           # Application Server
-└── run_dev.sh          # Native Runner
-```
+## Installation & Running Locally
 
----
+### Prerequisites
+- Python 3.9 or higher.
+- `pip` (Python Package Manager).
 
-## 🚢 Deployment
+### Setup
+1.  **Clone the repository**.
+2.  **Initialize the Environment**:
+    The included script sets up a virtual environment and installs the required `requests` and `protobuf` libraries.
+    ```bash
+    ./run_dev.sh
+    ```
+3.  **Access the Application**:
+    Navigate to `http://localhost:8001`.
 
-The application is containerized and ready for PaaS deployment (Railway, Render, Heroku).
+### Data Updates
+The static schedule data (`data/subway_schedule.json`) is generated from the raw MTA GTFS dump. To update the base topology or schedule:
+1.  Download the latest NYC Subway GTFS.
+2.  Run the ETL script:
+    ```bash
+    python3 scripts/update_data.py
+    ```
 
-1.  **Docker**: The included `Dockerfile` builds a lightweight alpine image.
-2.  **Environment**: 
-    *   `PORT`: Defaults to 8000.
-    *   `ENV`: Set to `production` to silence debug logs.
+## Roadmap
 
----
+### Information Hierarchy
+- [x] **Service Alerts**: Display active disruptions and reroutes in the map legend and station popups.
+- [x] **Live Train Counters**: Status panel shows the total number of scheduled vs. tracking trains.
 
-## 🔮 Roadmap & Backlog
+### Visualization
+- [x] **Line De-Interlacing**: Route lines are programmatically offset to prevent overlapping in high-density corridors like 8th Ave (A/C/E) and Broadway (N/Q/R/W).
+- [x] **Train Animation**: Smooth interpolation of train markers along track geometry.
 
-### ✅ Completed
-*   [x] **Real-Time GTFS Integration**: Integrated live Protobuf feeds from MTA.
-*   [x] **Smooth Zoom Animation**: Improved "Locate Me" transitions.
-*   [x] **Loading States**: Added granular loading indicators for heavy schedule data.
-
-### 🚧 Up Next
-*   [ ] **Visual Line De-interlacing**: In high-density corridors (e.g., Manhattan Trunk Lines), lines currently overlap. We need a geometry offset algorithm to render them side-by-side.
-*   [ ] **Search & Wayfinding**: detailed station search and highlight functionality.
-*   [ ] **Service Alerts**: Display "Rerouted" or "Suspended" banners based on GTFS Alert feeds.
+### Performance
+- [x] **Payload Optimization**: Schedule data is lazily loaded and compressed.
+- [ ] **Binary Format**: Evaluation of migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing on mobile devices.
