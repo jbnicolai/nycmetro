@@ -44,6 +44,20 @@ body {
     height: 100%;
     width: 100%;
     z-index: 1;
+    background: var(--bg-color);
+}
+
+/* Layer Fade Effects */
+.leaflet-pane {
+    transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.layer-hidden {
+    opacity: 0 !important;
+}
+
+.layer-visible {
+    opacity: 1 !important;
 }
 
 /* Sidebar - Glassmorphism */
@@ -1385,14 +1399,20 @@ body.rt-error .leaflet-control-container .leaflet-top {
     display: flex;
     flex-direction: column;
 }
+
 /* Geolocation Animations */
 .animate-spin {
     animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .location-pulse {
@@ -1401,8 +1421,15 @@ body.rt-error .leaflet-control-container .leaflet-top {
 }
 
 @keyframes location-pulse {
-    0% { transform: scale(0.8); opacity: 0.5; }
-    100% { transform: scale(3.5); opacity: 0; }
+    0% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+
+    100% {
+        transform: scale(3.5);
+        opacity: 0;
+    }
 }
 
 /* Train Hover Tooltips */
@@ -1414,13 +1441,17 @@ body.rt-error .leaflet-control-container .leaflet-top {
     font-size: 10px;
     font-weight: 600;
     padding: 2px 6px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     pointer-events: none;
     white-space: nowrap;
+    z-index: 10000 !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px);
 }
 
 .train-label::before {
-    display: none; /* Hide default arrow */
+    display: none;
+    /* Hide default arrow */
 }
 
 /* Enhanced Map Labels (Trains & Stations) */
@@ -1430,7 +1461,8 @@ body.rt-error .leaflet-control-container .leaflet-top {
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 6px !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
-    padding: 0 !important; /* Managed by content div */
+    padding: 0 !important;
+    /* Managed by content div */
     overflow: hidden;
 }
 
@@ -1451,15 +1483,15 @@ body.rt-error .leaflet-control-container .leaflet-top {
     font-size: 11px;
     font-weight: 800;
     color: white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.train-label .dest-text, 
+.train-label .dest-text,
 .station-hover-label {
     color: white !important;
     font-size: 12px !important;
     font-weight: 600 !important;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .station-hover-label {
@@ -1471,4 +1503,6 @@ body.rt-error .leaflet-control-container .leaflet-top {
 }
 
 /* Hide default subway-label if any left */
-.subway-label { display: none !important; }
+.subway-label {
+    display: none !important;
+}
