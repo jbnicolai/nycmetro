@@ -2,7 +2,7 @@ import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
 import { rtState, getMatchingTrip } from './realtime.js';
 import { renderRouteBadge, renderStatusBadge, renderTimelineRow, renderTrainFooter } from './ui.js';
-import { formatTime, getDelayInSeconds, getContrastColor } from './utils.js';
+import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight } from './utils.js';
 
 // ... (imports)
 
@@ -193,11 +193,29 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
             // Calculate Active Stats
             const total = activeTripIds.size;
             let rtCount = 0;
+            let extraCount = 0;
             activeTripIds.forEach(id => {
-                if (rtState.trips.has(id)) rtCount++;
+                if (id.includes && id.includes('..')) { // Crude check for GTFS-RT IDs or check against rtState
+                    // Actually, better to check if it matches a known RT trip directly
+                    if (rtState.trips.has(id)) rtCount++;
+                } else {
+                    // Check if this scheduled trip was matched? 
+                    // We don't persist "isMatched" easy on ID set.
+                    // But rtState.trips usually has the GTFS-RT ID.
+                    // If we are strictly using this loop, let's just count total.
+                    // Or, we can assume if it's in rtState.trips it might be an extra one if ID matches?
+                    // Let's just track "Live" as "Matched+Extra".
+                }
             });
 
-            StatusPanel.update("trains", `<span style="color:#fff">${total}</span> <span style="font-size:0.8em; color:#aaa;">(${rtCount} live)</span>`);
+            // Re-calc simply:
+            const totalRtInFeed = rtState.trips.size;
+            // activeTripIds contains both Scheduled (some matched) and Synthetic (all matched).
+
+            // Let's just show Total Active (and maybe label how many are extras?)
+            // For now, simple total is fine. "Live" usually meant matched.
+
+            StatusPanel.update("trains", `<span style="color:#fff">${total}</span> <span style="font-size:0.8em; color:#aaa;">(Active)</span>`);
             StatusPanel.update("time", formatTime(secondsSinceMidnight));
             lastFpsUpdate = nowMs;
             frameCount = 0;
@@ -205,6 +223,7 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 
         // 1. Identify Valid Trips & Update Positions
         const nextActiveTripIds = new Set();
+        const matchedRtTripIds = new Set(); // Track RT trips matched to schedule
 
         // Check RT Mode
         const useRealtime = rtState.mode === 'REALTIME';
@@ -218,27 +237,37 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
             const trips = schedule.routes[routeId];
             const routeInfo = routes[routeId] || { color: '#ffffff', short_name: routeId };
 
-            // Optimization: Maybe binary search trips in future? For now, simple loop.
+            // To prevent duplicates: Collect ALL candidate matches for this route/direction, 
+            // then only render the BEST match for each RT trip.
+            const candidates = []; // { trip, effectiveTime, isRealtime, rtId, delay, diff }
+
             for (const trip of trips) {
-                // ... (lines 102-145 omitted for brevity, keeping same logic) ...
-                // Optimization: Trip bounds check
                 const stops = trip.stops;
                 if (!stops || stops.length < 2) continue;
 
-                // --- Realtime Logic ---
                 let effectiveTime = secondsSinceMidnight;
                 let isRealtime = false;
+                let rtId = null;
+                let delay = 0;
+                let matchDiff = Infinity;
 
                 if (useRealtime) {
                     const rt = getMatchingTrip(trip.tripId, routeId);
                     if (rt) {
                         const scheduledStop = trip.stops.find(s => s.id === rt.stopId);
                         if (scheduledStop && rt.time) {
-                            const delay = getDelayInSeconds(rt, scheduledStop);
-                            // effectiveTime = CurrentTime (Seconds Since Midnight) - Delay
-                            // So that when we start animation at t=effectiveTime, it matches the RT position
+                            delay = getDelayInSeconds(rt, scheduledStop);
                             effectiveTime -= delay;
                             isRealtime = true;
+                            rtId = rt.tripId;
+
+                            // Calculate start time diff for better matching
+                            const parts = trip.tripId.split('..');
+                            if (parts[0].includes('_')) {
+                                const [h, m, s] = parts[0].split('_')[0].match(/.{2}/g).map(Number);
+                                const schedStart = h * 3600 + m * 60 + s;
+                                matchDiff = Math.abs((rt.startTime || 0) - schedStart);
+                            }
                         }
                     }
                 }
@@ -247,10 +276,86 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
                     continue;
                 }
 
-                // It is active!
-                nextActiveTripIds.add(trip.tripId);
-                updateTrainPosition(trip, routeId, routeInfo, effectiveTime, shapesByRoute, schedule, isRealtime, (secondsSinceMidnight - effectiveTime));
+                candidates.push({ trip, effectiveTime, isRealtime, rtId, delay, matchDiff });
             }
+
+            // Deduplicate: If multiple scheduled trips match the SAME RT trip, 
+            // only keep the one with the smallest matchDiff.
+            const bestMatches = new Map(); // rtId -> candidate
+            const unmatched = [];
+
+            candidates.forEach(c => {
+                if (c.rtId) {
+                    if (!bestMatches.has(c.rtId) || c.matchDiff < bestMatches.get(c.rtId).matchDiff) {
+                        bestMatches.set(c.rtId, c);
+                    }
+                } else {
+                    unmatched.push(c);
+                }
+            });
+
+            // Render!
+            bestMatches.forEach(c => {
+                matchedRtTripIds.add(c.rtId);
+                nextActiveTripIds.add(c.trip.tripId);
+                updateTrainPosition(c.trip, routeId, routeInfo, c.effectiveTime, shapesByRoute, schedule, c.isRealtime, c.delay);
+            });
+
+            // Also render unmatched scheduled trips (if desired for fallback)
+            unmatched.forEach(c => {
+                nextActiveTripIds.add(c.trip.tripId);
+                updateTrainPosition(c.trip, routeId, routeInfo, c.effectiveTime, shapesByRoute, schedule, false, 0);
+            });
+        }
+
+        // 1b. Process Unmatched Real-Time Trips (Extra Trains)
+        if (useRealtime) {
+            rtState.trips.forEach((rtTrip, tripId) => {
+                if (matchedRtTripIds.has(tripId)) return; // Already rendered via schedule
+
+                const routeId = rtTrip.routeId;
+                if (visibilitySet && visibilitySet.has(routeId)) return; // Route hidden
+
+                const routeInfo = routes[routeId] || { color: '#ffffff', short_name: routeId };
+
+                // Construct Synthetic Trip
+                // We need at least 2 stops to interpolate
+                if (!rtTrip.stopTimeUpdate || rtTrip.stopTimeUpdate.length < 2) return;
+
+                let lastTime = -1;
+                const syntheticStops = [];
+                for (const stu of rtTrip.stopTimeUpdate) {
+                    const rawT = stu.arrival?.time || stu.departure?.time;
+                    if (!rawT) continue;
+                    let t = unixToSecondsSinceMidnight(rawT);
+
+                    // Handle Wrap: If t < lastTime (and diff is large?), add 24h
+                    if (lastTime !== -1 && t < lastTime) {
+                        t += 86400;
+                    }
+
+                    syntheticStops.push({ id: stu.stopId, time: t });
+                    lastTime = t;
+                }
+
+                if (syntheticStops.length < 2) return;
+
+                const syntheticTrip = {
+                    tripId: tripId,
+                    stops: syntheticStops,
+                    isSynthetic: true
+                };
+
+                // Add to active set (ensure cleanup doesn't remove it)
+                nextActiveTripIds.add(tripId);
+
+                // Render
+                // For synthetic trips, effectiveTime is just current time (delay=0 relative to itself)
+                // We check if it's within bounds inside updateTrainPosition (or logic below)
+                // Note: We might need to handle 'shapesByRoute' lookup carefully. 
+                // If the train is on a route with multiple shapes, finding path segment should still work if stops are standard.
+                updateTrainPosition(syntheticTrip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule, true, 0);
+            });
         }
 
         // 2. Cleanup Old Markers
