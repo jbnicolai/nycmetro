@@ -9,9 +9,36 @@ import datetime
 import requests
 from google.transit import gtfs_realtime_pb2
 import time
+import sys
 import threading
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
+
+class Tee:
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            try:
+                f.write(obj)
+                f.flush()
+            except Exception:
+                pass 
+    def flush(self):
+        for f in self.files:
+            try:
+                f.flush()
+            except Exception:
+                pass
+
+# --- Logging Setup ---
+LOG_FILE_PATH = os.environ.get('LOG_TO_FILE')
+if LOG_FILE_PATH:
+    print(f"Redirecting output to {LOG_FILE_PATH} (and stdout)")
+    log_file = open(LOG_FILE_PATH, "a", buffering=1)
+    sys.stdout = Tee(sys.stdout, log_file)
+    sys.stderr = Tee(sys.stderr, log_file)
+    print(f"--- Server Started at {datetime.datetime.now()} ---")
 
 PORT = int(os.environ.get('PORT', 8001))
 DATA_FILE = "data/subway_config.json"
@@ -23,6 +50,13 @@ ALERTS_CACHE = {
     "data": [],
     "last_updated": 0
 }
+
+# --- Realtime Cache ---
+RT_CACHE = {
+    "data": None,
+    "last_updated": 0
+}
+RT_LOCK = Lock()
 
 def fetch_alerts_feed():
     """Fetches the MTA GTFS-Realtime Alerts Feed once."""
@@ -82,7 +116,10 @@ def fetch_realtime_feed():
         "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw", # N/Q/R/W
         "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm", # B/D/F/M
         "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",    # L
-        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g"     # G
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g",    # G
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-jz",   # J/Z
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-7",    # 7
+        "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si"    # SIR
     ]
     
     headers = {
@@ -123,8 +160,12 @@ def fetch_realtime_feed():
             if feed_name not in logged_count_per_feed: logged_count_per_feed[feed_name] = 0
 
             # Process Updates
+            feed_stats = {"tu": 0, "vp": 0}
+            irt_counts = {str(i): 0 for i in range(1, 8)} # 1-7
+
             for entity in feed.entity:
                 if entity.HasField('alert'):
+                     # ... (keep alert logic) ...
                     alert = entity.alert
                     header_text = alert.header_text.translation[0].text if alert.header_text.translation else "Alert"
                     desc_text = alert.description_text.translation[0].text if alert.description_text.translation else ""
@@ -138,16 +179,41 @@ def fetch_realtime_feed():
                     })
 
                 if entity.HasField('trip_update'):
+                    feed_stats["tu"] += 1
                     tu = entity.trip_update
+                    
+                    rid = tu.trip.route_id
+                    if rid in irt_counts:
+                        irt_counts[rid] += 1
+                        
                     if tu.stop_time_update:
+                        stu_list = []
+                        for stu in tu.stop_time_update:
+                            stu_list.append({
+                                "stopId": stu.stop_id,
+                                "arrival": {"time": stu.arrival.time} if stu.HasField("arrival") else None,
+                                "departure": {"time": stu.departure.time} if stu.HasField("departure") else None
+                            })
+                        
+                        # Use the first one for the summary fields (backward compat if needed)
                         stu = tu.stop_time_update[0]
                         trips.append({
                             "tripId": tu.trip.trip_id,
                             "routeId": tu.trip.route_id,
+                            "startTime": tu.trip.start_time,
+                            "startDate": tu.trip.start_date,
                             "stopId": stu.stop_id,
                             "status": "STOPPED_AT" if not stu.arrival.time else "IN_TRANSIT_TO",
-                            "time": stu.arrival.time or stu.departure.time
+                            "time": stu.arrival.time or stu.departure.time,
+                            "stopTimeUpdate": stu_list
                         })
+                elif entity.HasField('vehicle'):
+                    feed_stats["vp"] += 1
+
+            if "gtfs" in feed_name and "ace" not in feed_name and "nqrw" not in feed_name and "bdfm" not in feed_name and "l" not in feed_name and "g" not in feed_name:
+                 print(f"Feed {feed_name}: {len(feed.entity)} entities (TU: {feed_stats['tu']}, VP: {feed_stats['vp']})", flush=True)
+            else:
+                 print(f"Feed {feed_name}: {len(feed.entity)} entities (TU: {feed_stats['tu']}, VP: {feed_stats['vp']})", flush=True)
         except Exception as e:
             print(f"Error parsing feed content: {e}", flush=True)
 
@@ -311,9 +377,6 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             # Simple Caching (30s)
             now_ts = datetime.datetime.now().timestamp()
             
-            # Check Config - permissive (try without key)
-            # if not MTA_API_KEY: ... (Removed to allow keyless access)
-
             with RT_LOCK:
                 if not RT_CACHE['data'] or (now_ts - RT_CACHE['last_updated'] > 30):
                     print(f"Refreshing Realtime Data... (Cached: {bool(RT_CACHE['data'])}, Age: {now_ts - RT_CACHE['last_updated']:.1f}s)", flush=True)

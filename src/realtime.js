@@ -59,7 +59,11 @@ async function fetchRealtimeData() {
         if (data.trips && Array.isArray(data.trips)) {
             data.trips.forEach(t => {
                 // Strict Match
-                const routeId = normId(t.routeId);
+                let routeId = normId(t.routeId);
+
+                // BACKFILL MAPPING: Map known variants to canonical lines if config is missing them
+                // 5X is common but missing from subway_config.json (unlike 6X/7X)
+                if (routeId === '5X') routeId = '5';
                 const tripData = { ...t, routeId, timestamp: Date.now() };
                 rtState.trips.set(t.tripId, tripData);
                 if (routeId) rtState.rtRouteIds.add(routeId);

@@ -6,11 +6,16 @@ A real-time visualization of the New York City transit system, combining MTA sub
 ## data-sources
 The application aggregates data from the following public APIs:
 - **MTA GTFS-Static**: Provides the base schedule, route geometries (shapes.txt), and station locations.
-- **MTA GTFS-Realtime**: Provides live updates via Protocol Buffers (Probobuf).
-    - **Feed 1, 2, 11, 16, 21**: Numbered Lines, L, SIR.
-    - **Feed 26**: A/C/E Lines.
-    - **Feed 16**: N/Q/R/W Lines.
-    - **Feed 21**: B/D/F/M Lines.
+- **MTA GTFS-Realtime**: Provides live updates via Protocol Buffers (ProtoBuf). The backend server aggregates all available feeds:
+    - **GTFS (1-7, S)**: Main IRT lines and 42nd St Shuttle.
+    - **GTFS-ACE (A/C/E/H)**: 8th Ave lines and Rockaway Shuttle.
+    - **GTFS-NQRW (N/Q/R/W)**: Broadway lines.
+    - **GTFS-BDFM (B/D/F/M)**: 6th Ave lines.
+    - **GTFS-L (L)**: Canarsie line.
+    - **GTFS-G (G)**: Crosstown line.
+    - **GTFS-JZ (J/Z)**: Nassau St lines.
+    - **GTFS-7 (7)**: Flushing line.
+    - **GTFS-SI (SIR)**: Staten Island Railway.
 - **Citi Bike GBFS (General Bikeshare Feed Specification)**: Provides real-time station status (bikes available, e-bikes available, docks available).
 
 ## Architecture
@@ -108,9 +113,10 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
 
 ## Known Issues
+- **Route 3 Live Data Missing**: The MTA's `nyct/gtfs` feed is currently not reporting any trips for Route 3 (Red line), causing it to fall back to the static schedule. This has been confirmed as an upstream data issue.
 - **Ghost Trains**: Some real-time trips may not match perfectly to the static schedule, resulting in "Unknown" destinations or missing stops.
-- **Incorrect Train Instance Selection**: Station links for upcoming trains do not always center on the correct train instance (e.g., selecting a train further along the route instead of the one about to arrive).
-- **Realtime Reload Jitter**: Every time realtime data is reloaded, all trains 'jump' to a new position as their delay values are updated abruptly.
+- **Incorrect Train Instance Selection**: Station links for upcoming trains do not always center on the correct train instance.
+- **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
 
 ## Development Workflow
 > [!IMPORTANT]

@@ -207,6 +207,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             stats[routeId] = { rt: isRtRoute, liveCount: 0, schedCount: 0, skipped: 0, skp_stops: 0, skp_time: 0 };
 
             const liveTripIds = new Set();
+            const liveTimesByDir = { N: [], S: [] };
             let liveTripsFound = 0;
             if (isRtRoute && rtTripsByRoute[routeId]) {
                 // Use Pre-grouped Live Trips
@@ -245,6 +246,19 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                         continue;
                     }
 
+                    // Index for Fuzzy Dedup
+                    const firstStop = syntheticStops[0];
+                    const dir = firstStop.id.slice(-1); // 'N' or 'S' usually
+                    if (dir === 'N' || dir === 'S') {
+                        let originTime = firstStop.time;
+                        // Use Trip Start Time from Feed Header if available (Stable Identity)
+                        if (rtTrip.startTime) {
+                            const [h, m, s] = rtTrip.startTime.split(':').map(Number);
+                            originTime = h * 3600 + m * 60 + s;
+                        }
+                        liveTimesByDir[dir].push(originTime);
+                    }
+
                     stats[routeId].liveCount++;
                     liveTripsFound++;
                     activeList.push({
@@ -269,12 +283,26 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             for (let i = 0; i < schedTrips.length; i++) {
                 const trip = schedTrips[i];
 
-                // DEDUP: If this scheduled trip is already represented by a live trip, skip.
+                // DEDUP:
+                // 1. Strict ID Match
                 if (isRtRoute && liveTripIds.has(trip.tripId)) continue;
 
                 const stops = trip.stops;
                 if (!stops || stops.length < 2) continue;
                 const startTime = stops[0].time;
+
+                if (isRtRoute) {
+                    const stopId = stops[0].stopId;
+                    const dir = stopId ? stopId.slice(-1) : null;
+                    if (dir === 'N' || dir === 'S') {
+                        const times = liveTimesByDir[dir];
+                        // If any live train is within 5 minutes (300s) of this scheduled time, assume covered.
+                        // (NYC Headways are >5m usually, so collision implies same train)
+                        const isCovered = times.some(t => Math.abs(t - startTime) < 300);
+                        if (isCovered) continue;
+                    }
+                }
+
                 const endTime = stops[stops.length - 1].time;
 
                 // Extended window for scheduled too
@@ -418,6 +446,19 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
 
     // Optimization: Store last index on the marker to avoid rescan? 
     // For now, linear scan is fast enough given small stop counts per trip.
+
+    // CASE 1: Before Start (Waiting at First Station)
+    if (currentTime < trip.stops[0].time) {
+        const startStop = trip.stops[0];
+        const pos = getStopCoords(schedule, startStop.id);
+        if (pos) {
+            marker.setLatLng([pos[0], pos[1]]);
+            updateMarkerPopup(marker, trip, routeInfo, startStop, trip.stops[1], schedule, isRealtime, targetDelay);
+        }
+        return;
+    }
+
+    // CASE 2: In Transit
     for (let i = 0; i < trip.stops.length - 1; i++) {
         if (currentTime >= trip.stops[i].time && currentTime < trip.stops[i + 1].time) {
             prev = trip.stops[i];
@@ -426,7 +467,16 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
         }
     }
 
-    if (!prev || !next) return; // Should catch by outer bounds check, but just in case
+    // CASE 3: After End (Finished)
+    if (!prev || !next) {
+        // Likely finished trip or just out of bounds
+        const lastStop = trip.stops[trip.stops.length - 1];
+        if (currentTime >= lastStop.time) {
+            const pos = getStopCoords(schedule, lastStop.id);
+            if (pos) marker.setLatLng([pos[0], pos[1]]);
+        }
+        return;
+    }
 
     // 2. Calculate Progress (t) with Simulation of Wait Time (Dwell)
     // Assume stops[i].time is DEPARTURE time.
@@ -551,9 +601,49 @@ async function indexShapesByRoute(shapes) {
     return idx;
 }
 
+const STATION_ALIASES = {
+    'R60': '142', // South Ferry Loop
+    'R65': '142', // South Ferry Loop
+    '140': '142',
+    'H19': 'H04', // Broad Channel (Fallback for RT ID)
+    'F17': 'B06'  // Roosevelt Island (Fallback for RT ID)
+};
+
 function getStopCoords(schedule, stopId) {
-    const s = schedule.stops[stopId];
-    if (s) return s; // [lat, lon, name]
+    if (!stopId) return null;
+
+    // 1. Direct Lookup
+    let s = schedule.stops[stopId];
+    if (s) return s;
+
+    // 2. Direct Alias Lookup
+    if (STATION_ALIASES[stopId]) {
+        s = schedule.stops[STATION_ALIASES[stopId]];
+        if (s) return s;
+    }
+
+    // 3. Suffix Stripping (e.g. "R01N" -> "R01")
+    if (stopId.length > 3) {
+        const parentId = stopId.slice(0, -1);
+
+        // 3a. Parent Lookup
+        s = schedule.stops[parentId];
+        if (s) return s;
+
+        // 3b. Parent Alias Lookup
+        if (STATION_ALIASES[parentId]) {
+            s = schedule.stops[STATION_ALIASES[parentId]];
+            if (s) return s;
+        }
+    }
+
+    // DEBUG: Log missing IDs (once per ID to avoid spam)
+    if (!window._missingIds) window._missingIds = new Set();
+    if (!window._missingIds.has(stopId)) {
+        console.warn(`[getStopCoords] Missing coords for: '${stopId}'`);
+        window._missingIds.add(stopId);
+    }
+
     return null;
 }
 
