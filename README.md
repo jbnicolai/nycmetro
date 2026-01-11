@@ -112,3 +112,14 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - [ ] **Legend Improvements**: Controls to enable/disable all stations or select specific ones easily.
 - [ ] **Smart Filtering**: Cache Citi Bike data to avoid reloading on filter changes (~30s TTL).
 - [ ] **Load Optimization**: Further improve initial load metrics and loading UI.
+
+## Known Issues
+- **Delay Information on Stations**: Delay information is currently not showing up on station popups; only the time is displayed.
+
+## Future Improvements (Todo)
+- [ ] **Refactor**: Break down large files like `stations.js` and `animation.js` into smaller, more manageable modules.
+
+## Agent Learnings
+1. **Centralized Logic**: Moving shared logic (like `getMatchingTrip` in `realtime.js`) early prevents "Ghost Train" bugs where different parts of the app behave inconsistently.
+2. **Robust UI Config**: When adding dynamic text (like "Approaching"), always check for text wrapping and adjust container widths/flex properties immediately.
+3. **Tooltip Expansion**: Using a simple loop to generate generic list items (past/future stops) is much more flexible and maintainable than hardcoding "Next" and "Prev" slots.

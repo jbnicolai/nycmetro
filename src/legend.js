@@ -42,9 +42,7 @@ export function createLegend(map, layers, fetchCitibikeFn) {
              <div class="legend-section-title">
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span>Subway Lines</span>
-                    <label style="display:flex; align-items:center; font-size:0.8em; color:#e2e8f0; cursor:pointer;">
-                        <input type="checkbox" id="cb-show-tracks" style="margin-right:4px;" checked> Tracks
-                    </label>
+                    <button id="btn-toggle-tracks" class="btn-master-toggle" style="opacity: 1; color: var(--accent-color);">Hide Tracks</button>
                 </div>
                 <button id="btn-toggle-all" class="btn-master-toggle">Hide All</button>
             </div>
@@ -73,15 +71,26 @@ export function createLegend(map, layers, fetchCitibikeFn) {
 
     // --- Event Listeners ---
 
-    // Tracks Toggle
+    // Tracks Toggle (Button)
     setTimeout(() => {
-        const trackCb = document.getElementById('cb-show-tracks');
-        if (trackCb) {
-            trackCb.addEventListener('change', (e) => {
-                const show = e.target.checked;
-                if (show) layers.routes.addTo(map);
-                else layers.routes.remove();
-            });
+        const trackBtn = document.getElementById('btn-toggle-tracks');
+        let tracksVisible = true;
+
+        if (trackBtn) {
+            trackBtn.onclick = () => {
+                tracksVisible = !tracksVisible;
+                if (tracksVisible) {
+                    layers.routes.addTo(map);
+                    trackBtn.innerText = "Hide Tracks";
+                    trackBtn.style.color = "var(--accent-color)";
+                    trackBtn.style.opacity = "1";
+                } else {
+                    layers.routes.remove();
+                    trackBtn.innerText = "Show Tracks";
+                    trackBtn.style.color = "rgba(255,255,255,0.5)";
+                    trackBtn.style.opacity = "0.7";
+                }
+            };
         }
     }, 100);
 
