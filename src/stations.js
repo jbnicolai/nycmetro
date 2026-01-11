@@ -180,27 +180,34 @@ function getIncomingTrains(stopIds, direction) {
                 if (dirSchedule) {
                     dirSchedule.forEach(s => {
                         const sRouteId = normId(s.routeId);
-                        // REFINED SOFT ISOLATION: 
+                        // REFINED SOFT ISOLATION:
                         // If no live predictions for THIS SPECIFIC route/station combination,
                         // allow scheduled fallback.
-                        const hasLiveForThisRoute = results.some(r => r.routeId === sRouteId && r.isLive);
+                        // FIX: Allow 'departed' scheduled trains to show up even if live data exists for future trains,
+                        // because live feed drops past stops.
+                        let t = s.time;
+                        const diff = t - currentSeconds;
+                        const adjDiff = (diff < -43200) ? diff + 86400 : (diff > 43200) ? diff - 86400 : diff;
 
-                        if (!hasLiveForThisRoute) {
-                            let t = s.time;
-                            const diff = t - currentSeconds;
-                            const adjDiff = (diff < -43200) ? diff + 86400 : (diff > 43200) ? diff - 86400 : diff;
+                        // UNION STRATEGY (Match Map Logic):
+                        // Always consider scheduled trains. Deduplicate against Live trains by ID or Time.
 
-                            if (adjDiff > -300 && adjDiff < 7200) {
-                                // De-duplicate by time
-                                const alreadyIn = results.some(r => r.routeId === sRouteId && Math.abs(r.predictedTime - t) < 60);
-                                if (!alreadyIn) {
-                                    results.push({
-                                        tripId: s.tripId,
-                                        routeId: sRouteId,
-                                        predictedTime: t,
-                                        isLive: false
-                                    });
-                                }
+                        if (adjDiff > -300 && adjDiff < 7200) {
+                            // De-duplicate:
+                            // 1. Exact Trip ID Match (rare if RT IDs are complex)
+                            // 2. Time Match (if live train is within 2 mins of schedule)
+                            const alreadyIn = results.some(r =>
+                                (r.tripId === s.tripId) ||
+                                (r.routeId === sRouteId && Math.abs(r.predictedTime - t) < 120)
+                            );
+
+                            if (!alreadyIn) {
+                                results.push({
+                                    tripId: s.tripId,
+                                    routeId: sRouteId,
+                                    predictedTime: t,
+                                    isLive: false
+                                });
                             }
                         }
                     });
@@ -208,6 +215,7 @@ function getIncomingTrains(stopIds, direction) {
             }
         });
     }
+
 
     return results.sort((a, b) => {
         let da = a.predictedTime - currentSeconds;
@@ -449,8 +457,9 @@ function showStationPopup(features, layer) {
                 statusBadge = renderStatusBadge(mins, t.isLive, false);
             }
 
+            const safeId = t.tripId.replace(/'/g, "\\'");
             return `
-            <div class="arrival-row clickable-row ${rowClass.trim()}" onclick="window.flyToTrain('${t.tripId}')">
+            <div class="arrival-row clickable-row ${rowClass.trim()}" onclick="window.flyToTrain('${safeId}')">
                 <div class="arrival-left">
                     ${badgeHtml}
                     ${statusBadge}

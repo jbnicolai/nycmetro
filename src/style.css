@@ -494,7 +494,6 @@ h2 {
 .departed-row {
     opacity: 0.4;
     font-style: italic;
-    pointer-events: none;
     /* Make less prominent */
 }
 

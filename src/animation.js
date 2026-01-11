@@ -104,6 +104,8 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
     // Expose Global Helper
     window.flyToTrain = (tripId) => {
+        StatusPanel.log(`🔍 Looking for train: ${tripId}`);
+        console.log(`flyToTrain called for ${tripId}`);
         // Try direct lookup
         let marker = activeMarkers[tripId];
 
@@ -111,7 +113,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
         if (!marker) {
             // Scan for marker that has this ID as its rtId or scheduled ID
             for (const m of Object.values(activeMarkers)) {
-                if (m.tripId === tripId || m.rtId === tripId) {
+                if (m.tripId === tripId || m.rtId === tripId || m.schedId === tripId) {
                     marker = m;
                     break;
                 }
@@ -120,6 +122,19 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
         if (marker) {
             const ll = marker.getLatLng();
+
+            // Bounds Check (NYC rough box)
+            if (ll.lat === 0 && ll.lng === 0) {
+                console.warn(`Train ${tripId} is at [0,0] (Off Grid). Skipping flyTo.`);
+                StatusPanel.log(`Train ${tripId} is awaiting location...`);
+                return;
+            }
+            if (ll.lat < 40.4 || ll.lat > 41.0 || ll.lng < -74.3 || ll.lng > -73.6) {
+                console.warn(`Train ${tripId} is out of bounds: ${ll.lat}, ${ll.lng}. Skipping flyTo.`);
+                StatusPanel.log(`Train ${tripId} location invalid.`);
+                return;
+            }
+
             const map = marker._map;
             if (map) {
                 map.flyTo(ll, 16, { animate: true, duration: 1.0 }); // Zoom in closer
@@ -128,6 +143,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             }
         } else {
             console.warn("Train not found or not currently active:", tripId);
+            console.log("Active Trip IDs:", Object.keys(activeMarkers));
             StatusPanel.log(`Train ${tripId} not active.`);
         }
     };
@@ -135,12 +151,12 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
     if (!turf) {
         console.error("Turf.js not found! Animation disabled.");
         StatusPanel.log("Error: Turf.js missing. Animation stopped.");
-        return;
+        throw new Error("Turf.js missing");
     }
 
     if (!schedule || !schedule.routes) {
         console.warn("No schedule data available.");
-        return;
+        throw new Error("No schedule data");
     }
 
     StatusPanel.log("Loading Animation Layers...");
@@ -150,6 +166,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
     let lastScan = Date.now();
     let lastFpsUpdate = Date.now();
     let frameCount = 0;
+    let isScanning = false;
 
     // Index shapes directly for faster lookups
     const shapesByRoute = await indexShapesByRoute(shapes);
@@ -166,9 +183,21 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
         const useRealtime = rtState.mode === 'REALTIME';
         let yieldCounter = 0;
 
+        // PRE-GROUP RT TRIPS BY ROUTE to avoid O(N*M) loop
+        const rtTripsByRoute = {};
+        if (useRealtime) {
+            rtState.trips.forEach((rtTrip, tripId) => {
+                const rid = normId(rtTrip.routeId);
+                if (!rtTripsByRoute[rid]) rtTripsByRoute[rid] = [];
+                rtTripsByRoute[rid].push({ trip: rtTrip, id: tripId });
+            });
+        }
+
         const stats = {};
+
+        // Process one route at a time
         for (const routeIdRaw of routeKeys) {
-            if (++yieldCounter % 10 === 0) await yieldToMain();
+            if (++yieldCounter % 5 === 0) await yieldToMain(); // Yield more often
 
             const routeId = normId(routeIdRaw);
             if (visibilitySet && visibilitySet.has(routeId)) return;
@@ -177,12 +206,16 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             const isRtRoute = useRealtime && rtState.rtRouteIds.has(routeId);
             stats[routeId] = { rt: isRtRoute, liveCount: 0, schedCount: 0, skipped: 0, skp_stops: 0, skp_time: 0 };
 
+            const liveTripIds = new Set();
             let liveTripsFound = 0;
-            if (isRtRoute) {
-                // Use Live Trips
-                rtState.trips.forEach((rtTrip, tripId) => {
-                    const tripRouteId = normId(rtTrip.routeId);
-                    if (tripRouteId !== routeId) return;
+            if (isRtRoute && rtTripsByRoute[routeId]) {
+                // Use Pre-grouped Live Trips
+                for (const item of rtTripsByRoute[routeId]) {
+                    const rtTrip = item.trip;
+                    const tripId = item.id;
+                    liveTripIds.add(tripId);
+                    // Also track fuzzy matches if possible?
+                    // For now, rely on strict ID match or mapped SchedID.
 
                     const syntheticStops = [];
                     let lastTime = -1;
@@ -201,14 +234,15 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                     if (syntheticStops.length < 2) {
                         stats[routeId].skp_stops++;
                         stats[routeId].skipped++;
-                        return;
+                        continue;
                     }
 
                     const endTime = syntheticStops[syntheticStops.length - 1].time;
-                    if (secondsSinceMidnight < syntheticStops[0].time - 600 || secondsSinceMidnight > endTime + 300) {
+                    // Extended window to 900s (15m) to ensure 'Departed' trains stay clickable
+                    if (secondsSinceMidnight < syntheticStops[0].time - 600 || secondsSinceMidnight > endTime + 900) {
                         stats[routeId].skp_time++;
                         stats[routeId].skipped++;
-                        return;
+                        continue;
                     }
 
                     stats[routeId].liveCount++;
@@ -221,31 +255,39 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                         source: 'live',
                         delay: 0
                     });
-                });
+                }
             }
 
-            // OPPORTUNISTIC FALLBACK:
-            // If the route has NO live data, OR if the live feed produced 0 drawable trains,
-            // we fall back to scheduled data so the map isn't empty.
-            if (!isRtRoute || liveTripsFound === 0) {
-                const schedTrips = schedule.routes[routeIdRaw] || schedule.routes[routeId] || [];
-                schedTrips.forEach(trip => {
-                    const stops = trip.stops;
-                    if (!stops || stops.length < 2) return;
-                    const startTime = stops[0].time;
-                    const endTime = stops[stops.length - 1].time;
+            // ALWAYS FALLBACK (Backfill):
+            // Even if isRtRoute is true, we might miss some trains (e.g. Departed/Finished).
+            // Check schedule for any trains that are active/departed but currently missing from Live.
+            const schedTrips = schedule.routes[routeIdRaw] || schedule.routes[routeId] || [];
 
-                    if (secondsSinceMidnight < startTime - 600 || secondsSinceMidnight > endTime + 300) return;
+            // As optimization, only run full backfill if we have gaps or if it's the requested route?
+            // No, we need it for all to ensure map consistency.
+            // Use classic loop for speed.
+            for (let i = 0; i < schedTrips.length; i++) {
+                const trip = schedTrips[i];
 
-                    stats[routeId].schedCount++;
-                    activeList.push({
-                        trip,
-                        routeId,
-                        routeInfo,
-                        isRealtime: false,
-                        source: 'scheduled',
-                        delay: 0
-                    });
+                // DEDUP: If this scheduled trip is already represented by a live trip, skip.
+                if (isRtRoute && liveTripIds.has(trip.tripId)) continue;
+
+                const stops = trip.stops;
+                if (!stops || stops.length < 2) continue;
+                const startTime = stops[0].time;
+                const endTime = stops[stops.length - 1].time;
+
+                // Extended window for scheduled too
+                if (secondsSinceMidnight < startTime - 600 || secondsSinceMidnight > endTime + 900) continue;
+
+                stats[routeId].schedCount++;
+                activeList.push({
+                    trip,
+                    routeId,
+                    routeInfo,
+                    isRealtime: false,
+                    source: 'scheduled',
+                    delay: 0
                 });
             }
         }
@@ -260,36 +302,39 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
         const secondsSinceMidnight = unixToSecondsSinceMidnight(nowMs / 1000) + (now.getMilliseconds() / 1000);
 
-        // 1. Heavy Scan (1s)
-        if (nowMs - lastScan > 1000) {
-            performance.mark('scan-start');
-            currentTrips = await scanActiveTrips(secondsSinceMidnight);
-            lastScan = nowMs;
-            performance.mark('scan-end');
-            performance.measure('scan-duration', 'scan-start', 'scan-end');
+        // 1. Heavy Scan (Run in background every 1s, don't block frame)
+        if (nowMs - lastScan > 1000 && !isScanning) {
+            isScanning = true;
+            // Don't await! Let it run in background.
+            scanActiveTrips(secondsSinceMidnight).then(trips => {
+                currentTrips = trips; // Atomic update
+                lastScan = Date.now();
+                isScanning = false;
 
-            const activeIds = new Set(currentTrips.map(t => t.trip.tripId));
-
-            // Marker Adopting Logic
-            // If a trip changed ID (e.g. Live -> Sched) but represents the same physical train,
-            // we should pass the marker along. For now, we'll use rtId mapping.
-
-            for (const tripId in activeMarkers) {
-                if (!activeIds.has(tripId)) {
-                    // Check if this marker's RT ID or Scheduled ID is in the new active list
-                    const marker = activeMarkers[tripId];
-                    const stillActive = currentTrips.find(t => t.trip.tripId === marker.rtId || t.trip.tripId === marker.schedId);
-
-                    if (stillActive) {
-                        // Adopt me!
-                        activeMarkers[stillActive.trip.tripId] = marker;
-                        // But don't delete yet
-                    } else {
-                        layers.trains.removeLayer(marker);
+                // Marker Adopting Logic (Run here when trips update)
+                const activeIds = new Set(trips.map(t => t.trip.tripId));
+                for (const tripId in activeMarkers) {
+                    if (!activeIds.has(tripId)) {
+                        const marker = activeMarkers[tripId];
+                        // Check if matched by RT or Sched ID
+                        const stillActive = trips.find(t => t.trip.tripId === marker.rtId || t.trip.tripId === marker.schedId);
+                        if (stillActive) {
+                            activeMarkers[stillActive.trip.tripId] = marker;
+                            delete activeMarkers[tripId];
+                        } else {
+                            // Defer removal slightly to avoid flicker? No, just remove.
+                            // ACTUALLY: If clickability is an issue for 'Departed', we keep them?
+                            // No, if they are 'Departed' in stations.js, they might be culled here.
+                            // But we extended the window to 900s, so they should stick around.
+                            layers.trains.removeLayer(marker);
+                            delete activeMarkers[tripId];
+                        }
                     }
-                    delete activeMarkers[tripId];
                 }
-            }
+            }).catch(e => {
+                console.error("Scan error", e);
+                isScanning = false;
+            });
         }
 
         // 2. Fast Update (60fps)
