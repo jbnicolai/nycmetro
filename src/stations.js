@@ -1,5 +1,5 @@
-import { parseProperties, formatTime, getDelayInSeconds, unixToSecondsSinceMidnight } from './utils.js';
-import { rtState, getMatchingTrip } from './realtime.js';
+import { parseProperties, formatTime, getDelayInSeconds, unixToSecondsSinceMidnight, yieldToMain, normId } from './utils.js';
+import { rtState, getMatchingTrip, getScheduledIdForRt } from './realtime.js';
 import { getActiveAlerts } from './alerts.js';
 import { renderRouteBadge, renderStatusBadge } from './ui.js';
 
@@ -45,41 +45,43 @@ window.flyToStation = (stationId) => {
 
 
 
-function buildStationScheduleIndex(schedule) {
+async function buildStationScheduleIndex(schedule) {
     if (!schedule || !schedule.routes) return;
     rawSchedule = schedule;
     stationScheduleIndex = {};
+    const seenKeys = new Set();
 
     console.log("Building Station Schedule Index...");
-    Object.keys(schedule.routes).forEach(routeId => {
+    console.time("BuildStationIndex");
+    const routeIds = Object.keys(schedule.routes);
+    let tripCount = 0;
+
+    for (const routeId of routeIds) {
         const trips = schedule.routes[routeId];
-        trips.forEach(trip => {
+        for (const trip of trips) {
+            tripCount++;
             trip.stops.forEach(stop => {
                 const baseId = stop.id.substring(0, 3);
                 const dir = stop.id.slice(-1);
+
+                const key = `${baseId}_${dir}_${routeId}_${stop.time}`;
+                if (seenKeys.has(key)) return;
+                seenKeys.add(key);
 
                 if (!stationScheduleIndex[baseId]) {
                     stationScheduleIndex[baseId] = { N: [], S: [] };
                 }
 
                 if (stationScheduleIndex[baseId][dir]) {
-                    // Simple De-duplication: check if we already have this route at this time
-                    // (Assuming duplicates are due to multiple service_ids for different days)
-                    const existing = stationScheduleIndex[baseId][dir].find(
-                        item => item.routeId === routeId && item.time === stop.time
-                    );
-
-                    if (!existing) {
-                        stationScheduleIndex[baseId][dir].push({
-                            routeId: routeId,
-                            time: stop.time,
-                            tripId: trip.tripId
-                        });
-                    }
+                    stationScheduleIndex[baseId][dir].push({
+                        routeId: routeId,
+                        time: stop.time,
+                        tripId: trip.tripId
+                    });
                 }
             });
-        });
-    });
+        }
+    }
 
     // Sort all by time
     Object.values(stationScheduleIndex).forEach(dirs => {
@@ -135,8 +137,11 @@ let routeConfigs = {};
 // Helper to get incoming trains merging RT and Schedule
 function getIncomingTrains(stopIds, direction) {
     const results = [];
-    const processedTripIds = new Set();
     const currentSeconds = unixToSecondsSinceMidnight(Date.now() / 1000);
+
+    if (results.length === 0) {
+        // console.log(`Station ${Array.from(stopIds)[0]} [${direction}] scanning at t=${currentSeconds}`);
+    }
 
     // 1. RT Scan
     rtState.trips.forEach((trip, tripId) => {
@@ -166,41 +171,48 @@ function getIncomingTrains(stopIds, direction) {
                     if (adjDiff > -300 && adjDiff < 7200) { // Look back 5m, forward 2h
                         results.push({
                             tripId,
-                            routeId: trip.routeId,
+                            routeId: normId(trip.routeId),
                             predictedTime: secs,
                             isLive: true,
                             rt: trip
                         });
-                        processedTripIds.add(tripId);
                     }
                 }
             }
         }
     });
 
-    // 2. Schedule Fallback
+    // 2. Schedule Fallback (Route Isolation)
     if (stationScheduleIndex) {
         stopIds.forEach(stopId => {
             const scheduleObj = stationScheduleIndex[stopId];
             if (scheduleObj) {
-                // scheduleObj is { N: [], S: [] }
-                // We only need the direction we are currently looking for
                 const dirSchedule = scheduleObj[direction]; // 'N' or 'S'
 
                 if (dirSchedule) {
                     dirSchedule.forEach(s => {
-                        if (!processedTripIds.has(s.tripId)) {
+                        const sRouteId = normId(s.routeId);
+                        // REFINED SOFT ISOLATION: 
+                        // If no live predictions for THIS SPECIFIC route/station combination,
+                        // allow scheduled fallback.
+                        const hasLiveForThisRoute = results.some(r => r.routeId === sRouteId && r.isLive);
+
+                        if (!hasLiveForThisRoute) {
                             let t = s.time;
                             const diff = t - currentSeconds;
                             const adjDiff = (diff < -43200) ? diff + 86400 : (diff > 43200) ? diff - 86400 : diff;
 
-                            if (adjDiff > -300 && adjDiff < 7200) { // Look back 5m, forward 2h
-                                results.push({
-                                    tripId: s.tripId,
-                                    routeId: s.routeId,
-                                    predictedTime: t,
-                                    isLive: false
-                                });
+                            if (adjDiff > -300 && adjDiff < 7200) {
+                                // De-duplicate by time
+                                const alreadyIn = results.some(r => r.routeId === sRouteId && Math.abs(r.predictedTime - t) < 60);
+                                if (!alreadyIn) {
+                                    results.push({
+                                        tripId: s.tripId,
+                                        routeId: sRouteId,
+                                        predictedTime: t,
+                                        isLive: false
+                                    });
+                                }
                             }
                         }
                     });
@@ -219,9 +231,9 @@ function getIncomingTrains(stopIds, direction) {
 
 let activeHighlightLayers = [];
 
-export function renderStations(geoJson, layerGroup, schedule, routes) {
+export async function renderStations(geoJson, layerGroup, schedule, routes) {
     if (schedule && !stationScheduleIndex) {
-        buildStationScheduleIndex(schedule);
+        await buildStationScheduleIndex(schedule);
     }
     if (routes) {
         routeConfigs = routes;
@@ -282,7 +294,8 @@ export function renderStations(geoJson, layerGroup, schedule, routes) {
                 color: '#000',
                 weight: 1.5,
                 opacity: 1,
-                fillOpacity: 0.8
+                fillOpacity: 0.8,
+                pane: 'stationsPane'
             });
 
             // Basic Tooltip
