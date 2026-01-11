@@ -1,10 +1,9 @@
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
-import { rtState, getMatchingTrip } from './realtime.js';
+import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight, yieldToMain, normId } from './utils.js';
+import { rtState, getMatchingTrip, registerMatch } from './realtime.js';
 import { renderRouteBadge, renderStatusBadge, renderTimelineRow, renderTrainFooter } from './ui.js';
-import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight } from './utils.js';
 
-// ... (imports)
 
 // Remove local getContrastColor helper at bottom of file if exists (it does)
 
@@ -16,28 +15,21 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
     };
 
     const destName = getName(trip.stops[trip.stops.length - 1].id);
-    const routeId = routeInfo.short_name; // or routeInfo.id? usually same for badge
 
-    // Status Badge Logic
-    // We need to map our custom rtStatus/delay logic to the helper
-    const delayMin = Math.round((delay || 0) / 60);
-    const isLive = isRealtime;
-    // Animation doesn't explicit track isAtStation/isStopped for popup badge generally, usually just delay?
-    // Let's stick to simple "Live (+X min)" using helper if possible, or keep custom if helper insufficient.
-    // Helper renderStatusBadge is generic. Let's try to use it.
+    // 1. Source Indicator
+    let rtStatus = "";
+    if (isRealtime) {
+        rtStatus = `
+            <div class="train-realtime-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: rgba(16, 185, 129, 0.3);">
+                <span class="blink-dot" style="background: #10b981;"></span> LIVE DATA
+            </div>`;
+    } else {
+        rtStatus = `
+            <div class="train-realtime-badge" style="background: rgba(156, 163, 175, 0.2); color: #9ca3af; border-color: rgba(156, 163, 175, 0.3);">
+                SCHEDULED
+            </div>`;
+    }
 
-    // Reuse helper for badge?
-    // The helper logic: renderStatusBadge(isLive, delayMins, isAtStation, isStopped)
-    // Animation popup usually shows "Live (+X)" in a specific bubble. 
-    // The previous code had: <div class="train-realtime-badge">...</div>
-    // Let's defer exact UI match or refactor ui.js to support this style.
-    // Actually the goal is to UNIFY. So let's use the station-style badge if appropriate, or keep custom.
-    // The user liked the "train tooltip overhaul" we just did. 
-    // It used: <div class="train-realtime-badge"><span class="blink-dot"></span> Live (+12 min)</div>
-    // This is distinct from the station popup badges. 
-    // Let's keep the custom realtime badge for trains for now to avoid regression, but use the TIMELINE helpers.
-
-    // 1. Route Badge
     const routeBadgeHtml = renderRouteBadge(routeInfo.short_name, routeInfo);
 
     // 2. Timeline
@@ -54,7 +46,6 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
         const isNext = absoluteIndex === nextIndex;
         const stopName = getName(stop.id);
 
-        // Use generic helper, passing name manually since helper doesn't have schedule access
         return renderTimelineRow({ ...stop, name: stopName }, isNext, isPast, routeInfo.color || '#333', delay);
     }).join('');
 
@@ -64,21 +55,6 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
         { ...trip.stops[trip.stops.length - 1], name: getName(trip.stops[trip.stops.length - 1].id) },
         Math.round((trip.stops[trip.stops.length - 1].time - trip.stops[0].time) / 60)
     );
-
-    // Reconstruct Content
-    // RT Status (Custom for now as per "Overhaul")
-    let rtStatus = "";
-    if (isRealtime) {
-        const delayMin = Math.round((delay || 0) / 60);
-        let delayText = "";
-        if (delayMin > 1) delayText = `<span style="color:#ef4444; margin-left:6px;">(+${delayMin} min)</span>`;
-        else if (delayMin < -1) delayText = `<span style="color:#10b981; margin-left:6px;">(${delayMin} min)</span>`;
-
-        rtStatus = `
-            <div class="train-realtime-badge">
-                <span class="blink-dot"></span> Live ${delayText}
-            </div>`;
-    }
 
     const content = `
     <div class="train-popup expanded-popup">
@@ -119,7 +95,7 @@ const turf = window.turf;
 /**
  * Main Entry Point: Start Animation Loop
  */
-export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
+export async function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
     // Clear existing
@@ -128,17 +104,31 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 
     // Expose Global Helper
     window.flyToTrain = (tripId) => {
-        const marker = activeMarkers[tripId];
+        // Try direct lookup
+        let marker = activeMarkers[tripId];
+
+        // If not found, it might be a mapping issue (RT vs Scheduled ID)
+        if (!marker) {
+            // Scan for marker that has this ID as its rtId or scheduled ID
+            for (const m of Object.values(activeMarkers)) {
+                if (m.tripId === tripId || m.rtId === tripId) {
+                    marker = m;
+                    break;
+                }
+            }
+        }
+
         if (marker) {
             const ll = marker.getLatLng();
             const map = marker._map;
             if (map) {
-                map.flyTo(ll, 15, { animate: true, duration: 1.2 });
+                map.flyTo(ll, 16, { animate: true, duration: 1.0 }); // Zoom in closer
                 // Slight delay to allow flyTo to start
                 setTimeout(() => marker.openPopup(), 400);
             }
         } else {
-            console.warn("Train not found or not active:", tripId);
+            console.warn("Train not found or not currently active:", tripId);
+            StatusPanel.log(`Train ${tripId} not active.`);
         }
     };
 
@@ -153,231 +143,188 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
         return;
     }
 
-    StatusPanel.log("Animation Engine Started.");
+    StatusPanel.log("Loading Animation Layers...");
     console.log("[Schedule] Starting Real-Time Animation...");
 
-    // Index shapes directly for faster lookups based on route_id
-    const shapesByRoute = indexShapesByRoute(shapes);
-
-    // Initial State
-    let lastFpsUpdate = 0;
+    let currentTrips = [];
+    let lastScan = Date.now();
+    let lastFpsUpdate = Date.now();
     let frameCount = 0;
-    let lastLog = 0;
+
+    // Index shapes directly for faster lookups
+    const shapesByRoute = await indexShapesByRoute(shapes);
+
+    StatusPanel.log("Preparing Active Trips...");
+    const routeKeys = (schedule && schedule.routes) ? Object.keys(schedule.routes) : [];
+
+    // Initial scan to populate currentTrips immediately
+    const startSecs = unixToSecondsSinceMidnight(Date.now() / 1000);
+    currentTrips = scanActiveTrips(startSecs);
+
+    function scanActiveTrips(secondsSinceMidnight) {
+        const activeList = [];
+        const useRealtime = rtState.mode === 'REALTIME';
+
+        const stats = {};
+        routeKeys.forEach(routeIdRaw => {
+            const routeId = normId(routeIdRaw);
+            if (visibilitySet && visibilitySet.has(routeId)) return;
+            const routeInfo = routes[routeIdRaw] || routes[routeId] || { color: '#ffffff', short_name: routeId };
+
+            const isRtRoute = useRealtime && rtState.rtRouteIds.has(routeId);
+            stats[routeId] = { rt: isRtRoute, liveCount: 0, schedCount: 0, skipped: 0, skp_stops: 0, skp_time: 0 };
+
+            let liveTripsFound = 0;
+            if (isRtRoute) {
+                // Use Live Trips
+                rtState.trips.forEach((rtTrip, tripId) => {
+                    const tripRouteId = normId(rtTrip.routeId);
+                    if (tripRouteId !== routeId) return;
+
+                    const syntheticStops = [];
+                    let lastTime = -1;
+
+                    if (rtTrip.stopTimeUpdate) {
+                        for (const stu of rtTrip.stopTimeUpdate) {
+                            const rawT = stu.arrival?.time || stu.departure?.time;
+                            if (!rawT) continue;
+                            let t = unixToSecondsSinceMidnight(rawT);
+                            if (lastTime !== -1 && t < lastTime) t += 86400;
+                            syntheticStops.push({ id: stu.stopId, time: t });
+                            lastTime = t;
+                        }
+                    }
+
+                    if (syntheticStops.length < 2) {
+                        stats[routeId].skp_stops++;
+                        stats[routeId].skipped++;
+                        return;
+                    }
+
+                    const endTime = syntheticStops[syntheticStops.length - 1].time;
+                    if (secondsSinceMidnight < syntheticStops[0].time - 600 || secondsSinceMidnight > endTime + 300) {
+                        stats[routeId].skp_time++;
+                        stats[routeId].skipped++;
+                        return;
+                    }
+
+                    stats[routeId].liveCount++;
+                    liveTripsFound++;
+                    activeList.push({
+                        trip: { tripId, stops: syntheticStops, isSynthetic: true },
+                        routeId,
+                        routeInfo,
+                        isRealtime: true,
+                        source: 'live',
+                        delay: 0
+                    });
+                });
+            }
+
+            // OPPORTUNISTIC FALLBACK:
+            // If the route has NO live data, OR if the live feed produced 0 drawable trains,
+            // we fall back to scheduled data so the map isn't empty.
+            if (!isRtRoute || liveTripsFound === 0) {
+                const schedTrips = schedule.routes[routeIdRaw] || schedule.routes[routeId] || [];
+                schedTrips.forEach(trip => {
+                    const stops = trip.stops;
+                    if (!stops || stops.length < 2) return;
+                    const startTime = stops[0].time;
+                    const endTime = stops[stops.length - 1].time;
+
+                    if (secondsSinceMidnight < startTime - 600 || secondsSinceMidnight > endTime + 300) return;
+
+                    stats[routeId].schedCount++;
+                    activeList.push({
+                        trip,
+                        routeId,
+                        routeInfo,
+                        isRealtime: false,
+                        source: 'scheduled',
+                        delay: 0
+                    });
+                });
+            }
+        });
+
+        return activeList;
+    }
 
     function animate() {
         const now = new Date();
         const nowMs = now.getTime();
-
-        // Stats: FPS
         frameCount++;
-        // Calculate time in seconds since midnight (NYC Time)
-        // We use toLocaleString to get NYC time components regardless of browser timezone
-        const nycTimeStr = now.toLocaleString("en-US", {
-            timeZone: "America/New_York",
-            hour12: false,
-            hour: "numeric",
-            minute: "numeric",
-            second: "numeric"
+
+        const secondsSinceMidnight = unixToSecondsSinceMidnight(nowMs / 1000) + (now.getMilliseconds() / 1000);
+
+        // 1. Heavy Scan (1s)
+        if (nowMs - lastScan > 1000) {
+            currentTrips = scanActiveTrips(secondsSinceMidnight);
+            lastScan = nowMs;
+
+            const activeIds = new Set(currentTrips.map(t => t.trip.tripId));
+
+            // Marker Adopting Logic
+            // If a trip changed ID (e.g. Live -> Sched) but represents the same physical train,
+            // we should pass the marker along. For now, we'll use rtId mapping.
+
+            for (const tripId in activeMarkers) {
+                if (!activeIds.has(tripId)) {
+                    // Check if this marker's RT ID or Scheduled ID is in the new active list
+                    const marker = activeMarkers[tripId];
+                    const stillActive = currentTrips.find(t => t.trip.tripId === marker.rtId || t.trip.tripId === marker.schedId);
+
+                    if (stillActive) {
+                        // Adopt me!
+                        activeMarkers[stillActive.trip.tripId] = marker;
+                        // But don't delete yet
+                    } else {
+                        layers.trains.removeLayer(marker);
+                    }
+                    delete activeMarkers[tripId];
+                }
+            }
+        }
+
+        // 2. Fast Update (60fps)
+        currentTrips.forEach(c => {
+            updateTrainPosition(c.trip, c.routeId, c.routeInfo, secondsSinceMidnight, shapesByRoute, schedule, c.isRealtime, c.delay, c.rtId);
         });
 
-        // Parse "HH:MM:SS" or "24:00:00"
-        const [h, m, s] = nycTimeStr.split(':').map(Number);
-        const ms = now.getMilliseconds() / 1000;
-
-        const secondsSinceMidnight = (h * 3600) + (m * 60) + s + ms;
-
-        // Also update status panel with NYC time
         if (nowMs - lastFpsUpdate >= 1000) {
             StatusPanel.update("fps", frameCount);
-
-            // Calculate Active Stats
-            const total = activeTripIds.size;
-            let rtCount = 0;
-            let extraCount = 0;
-            activeTripIds.forEach(id => {
-                if (id.includes && id.includes('..')) { // Crude check for GTFS-RT IDs or check against rtState
-                    // Actually, better to check if it matches a known RT trip directly
-                    if (rtState.trips.has(id)) rtCount++;
-                } else {
-                    // Check if this scheduled trip was matched? 
-                    // We don't persist "isMatched" easy on ID set.
-                    // But rtState.trips usually has the GTFS-RT ID.
-                    // If we are strictly using this loop, let's just count total.
-                    // Or, we can assume if it's in rtState.trips it might be an extra one if ID matches?
-                    // Let's just track "Live" as "Matched+Extra".
-                }
-            });
-
-            // Re-calc simply:
-            const totalRtInFeed = rtState.trips.size;
-            // activeTripIds contains both Scheduled (some matched) and Synthetic (all matched).
-
-            // Let's just show Total Active (and maybe label how many are extras?)
-            // For now, simple total is fine. "Live" usually meant matched.
-
-            StatusPanel.update("trains", `<span style="color:#fff">${total}</span> <span style="font-size:0.8em; color:#aaa;">(Active)</span>`);
+            StatusPanel.update("trains", `<span style="color:#fff">${currentTrips.length}</span> <span style="font-size:0.8em; color:#aaa;">(Active)</span>`);
             StatusPanel.update("time", formatTime(secondsSinceMidnight));
             lastFpsUpdate = nowMs;
             frameCount = 0;
         }
 
-        // 1. Identify Valid Trips & Update Positions
-        const nextActiveTripIds = new Set();
-        const matchedRtTripIds = new Set(); // Track RT trips matched to schedule
-
-        // Check RT Mode
-        const useRealtime = rtState.mode === 'REALTIME';
-
-        // Iterate all routes
-        const routeIds = Object.keys(schedule.routes);
-        for (const routeId of routeIds) {
-            // Check visibility
-            if (visibilitySet && visibilitySet.has(routeId)) continue;
-
-            const trips = schedule.routes[routeId];
-            const routeInfo = routes[routeId] || { color: '#ffffff', short_name: routeId };
-
-            // To prevent duplicates: Collect ALL candidate matches for this route/direction, 
-            // then only render the BEST match for each RT trip.
-            const candidates = []; // { trip, effectiveTime, isRealtime, rtId, delay, diff }
-
-            for (const trip of trips) {
-                const stops = trip.stops;
-                if (!stops || stops.length < 2) continue;
-
-                let effectiveTime = secondsSinceMidnight;
-                let isRealtime = false;
-                let rtId = null;
-                let delay = 0;
-                let matchDiff = Infinity;
-
-                if (useRealtime) {
-                    const rt = getMatchingTrip(trip.tripId, routeId);
-                    if (rt) {
-                        const scheduledStop = trip.stops.find(s => s.id === rt.stopId);
-                        if (scheduledStop && rt.time) {
-                            delay = getDelayInSeconds(rt, scheduledStop);
-                            effectiveTime -= delay;
-                            isRealtime = true;
-                            rtId = rt.tripId;
-
-                            // Calculate start time diff for better matching
-                            const parts = trip.tripId.split('..');
-                            if (parts[0].includes('_')) {
-                                const [h, m, s] = parts[0].split('_')[0].match(/.{2}/g).map(Number);
-                                const schedStart = h * 3600 + m * 60 + s;
-                                matchDiff = Math.abs((rt.startTime || 0) - schedStart);
-                            }
-                        }
-                    }
-                }
-
-                if (effectiveTime < stops[0].time || effectiveTime > stops[stops.length - 1].time) {
-                    continue;
-                }
-
-                candidates.push({ trip, effectiveTime, isRealtime, rtId, delay, matchDiff });
-            }
-
-            // Deduplicate: If multiple scheduled trips match the SAME RT trip, 
-            // only keep the one with the smallest matchDiff.
-            const bestMatches = new Map(); // rtId -> candidate
-            const unmatched = [];
-
-            candidates.forEach(c => {
-                if (c.rtId) {
-                    if (!bestMatches.has(c.rtId) || c.matchDiff < bestMatches.get(c.rtId).matchDiff) {
-                        bestMatches.set(c.rtId, c);
-                    }
-                } else {
-                    unmatched.push(c);
-                }
-            });
-
-            // Render!
-            bestMatches.forEach(c => {
-                matchedRtTripIds.add(c.rtId);
-                nextActiveTripIds.add(c.trip.tripId);
-                updateTrainPosition(c.trip, routeId, routeInfo, c.effectiveTime, shapesByRoute, schedule, c.isRealtime, c.delay);
-            });
-
-            // Also render unmatched scheduled trips (if desired for fallback)
-            unmatched.forEach(c => {
-                nextActiveTripIds.add(c.trip.tripId);
-                updateTrainPosition(c.trip, routeId, routeInfo, c.effectiveTime, shapesByRoute, schedule, false, 0);
-            });
-        }
-
-        // 1b. Process Unmatched Real-Time Trips (Extra Trains)
-        if (useRealtime) {
-            rtState.trips.forEach((rtTrip, tripId) => {
-                if (matchedRtTripIds.has(tripId)) return; // Already rendered via schedule
-
-                const routeId = rtTrip.routeId;
-                if (visibilitySet && visibilitySet.has(routeId)) return; // Route hidden
-
-                const routeInfo = routes[routeId] || { color: '#ffffff', short_name: routeId };
-
-                // Construct Synthetic Trip
-                // We need at least 2 stops to interpolate
-                if (!rtTrip.stopTimeUpdate || rtTrip.stopTimeUpdate.length < 2) return;
-
-                let lastTime = -1;
-                const syntheticStops = [];
-                for (const stu of rtTrip.stopTimeUpdate) {
-                    const rawT = stu.arrival?.time || stu.departure?.time;
-                    if (!rawT) continue;
-                    let t = unixToSecondsSinceMidnight(rawT);
-
-                    // Handle Wrap: If t < lastTime (and diff is large?), add 24h
-                    if (lastTime !== -1 && t < lastTime) {
-                        t += 86400;
-                    }
-
-                    syntheticStops.push({ id: stu.stopId, time: t });
-                    lastTime = t;
-                }
-
-                if (syntheticStops.length < 2) return;
-
-                const syntheticTrip = {
-                    tripId: tripId,
-                    stops: syntheticStops,
-                    isSynthetic: true
-                };
-
-                // Add to active set (ensure cleanup doesn't remove it)
-                nextActiveTripIds.add(tripId);
-
-                // Render
-                // For synthetic trips, effectiveTime is just current time (delay=0 relative to itself)
-                // We check if it's within bounds inside updateTrainPosition (or logic below)
-                // Note: We might need to handle 'shapesByRoute' lookup carefully. 
-                // If the train is on a route with multiple shapes, finding path segment should still work if stops are standard.
-                updateTrainPosition(syntheticTrip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule, true, 0);
-            });
-        }
-
-        // 2. Cleanup Old Markers
-        for (const tripId in activeMarkers) {
-            if (!nextActiveTripIds.has(tripId)) {
-                // Train finished or route hidden
-                layers.trains.removeLayer(activeMarkers[tripId]);
-                delete activeMarkers[tripId];
-            }
-        }
-
-        // Update Global State
-        activeTripIds = nextActiveTripIds;
-
-        // Heartbeat Log
-        if (nowMs - lastLog > 10000) {
-            // StatusPanel.log(`Active Trains: ${activeTripIds.size}`);
-            lastLog = nowMs;
-        }
-
         animationFrameId = requestAnimationFrame(animate);
     }
+
+    // Export debug helper
+    window.debugTransit = () => {
+        console.log("--- Transit Debug Hook ---");
+        console.log("rtState Mode:", rtState.mode);
+        console.log("rtState Routes with Live:", Array.from(rtState.rtRouteIds));
+
+        const rtCounts = {};
+        rtState.trips.forEach(t => {
+            const rid = normId(t.routeId);
+            rtCounts[rid] = (rtCounts[rid] || 0) + 1;
+        });
+        console.log("Trip counts in rtState.trips by Route ID:", rtCounts);
+
+        const activeSummary = currentTrips.reduce((acc, t) => {
+            acc[t.routeId] = (acc[t.routeId] || 0) + 1;
+            return acc;
+        }, {});
+        console.log("Final Active Trains on Map by Route ID:", activeSummary);
+
+        console.log("Visibility List (Set):", visibilitySet ? Array.from(visibilitySet) : "None");
+
+        return "Check logs above.";
+    };
 
     animate();
 }
@@ -385,8 +332,35 @@ export function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
 /**
  * Updates a single train's position and marker
  */
-function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRoute, schedule, isRealtime, delay) {
+function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule, isRealtime, targetDelay, rtId) {
     // 1. Find Current Segment
+    let marker = activeMarkers[trip.tripId];
+    if (!marker) {
+        marker = createTrainMarker(trip, routeInfo, schedule);
+        activeMarkers[trip.tripId] = marker;
+        marker.animatedDelay = targetDelay;
+        marker.tripId = trip.tripId;
+
+        // Identity Tracking
+        if (isRealtime) {
+            marker.rtId = trip.tripId;
+            marker.schedId = (typeof getMatchingTrip === 'function') ? getMatchingTrip(trip.tripId, routeId)?.tripId : null;
+        } else {
+            marker.schedId = trip.tripId;
+            // No easy way to find rtId here, but adopting logic handles it.
+        }
+    }
+
+    // Smooth Delay Transition (Slower catchup: catch up over ~10s instead of ~2s)
+    if (Math.abs(marker.animatedDelay - targetDelay) > 0.1) {
+        const step = (targetDelay - marker.animatedDelay) * 0.02;
+        marker.animatedDelay += step;
+    } else {
+        marker.animatedDelay = targetDelay;
+    }
+
+    const currentTime = secondsSinceMidnight - marker.animatedDelay;
+
     // We want the segment [prev, next] such that prev.time <= currentTime < next.time
     let prev = null;
     let next = null;
@@ -430,13 +404,6 @@ function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRout
 
     let lat, lon;
 
-    // Check Cache / Initialize Marker State
-    let marker = activeMarkers[trip.tripId];
-    if (!marker) {
-        marker = createTrainMarker(trip, routeInfo);
-        activeMarkers[trip.tripId] = marker;
-    }
-
     // Segment ID for caching geometry
     const segmentId = `${prev.id}-${next.id}`;
 
@@ -448,7 +415,7 @@ function updateTrainPosition(trip, routeId, routeInfo, currentTime, shapesByRout
         marker.cachedLength = marker.cachedPath ? turf.length(marker.cachedPath) : 0;
 
         // Update popup static info only when segment changes
-        updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, delay);
+        updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, targetDelay);
     }
 
     if (marker.cachedPath && marker.cachedLength > 0) {
@@ -517,14 +484,15 @@ function findPathSegment(posA, posB, availableShapes) {
 
 // ------ Helpers ------
 
-function indexShapesByRoute(shapes) {
+async function indexShapesByRoute(shapes) {
     const idx = {};
     if (shapes && shapes.features) {
-        shapes.features.forEach(f => {
+        for (let i = 0; i < shapes.features.length; i++) {
+            const f = shapes.features[i];
             const rid = f.properties.route_id;
             if (!idx[rid]) idx[rid] = [];
             idx[rid].push(f);
-        });
+        }
     }
     return idx;
 }
@@ -535,10 +503,15 @@ function getStopCoords(schedule, stopId) {
     return null;
 }
 
-function createTrainMarker(trip, routeInfo) {
+function createTrainMarker(trip, routeInfo, schedule) {
     const color = routeInfo.color || '#fff';
     const routeId = routeInfo.id || '?';
-    const dest = trip.headsign || 'Subway';
+
+    const getName = (id) => {
+        const s = schedule.stops[id];
+        return s ? s[2] : id;
+    };
+    const dest = getName(trip.stops[trip.stops.length - 1].id);
 
     // CSS-based Icon with large hit area (32px)
     const icon = L.divIcon({
@@ -556,7 +529,11 @@ function createTrainMarker(trip, routeInfo) {
         iconAnchor: [16, 16] // Center it
     });
 
-    const marker = L.marker([0, 0], { icon: icon, pane: 'trainsPane' }).addTo(layers.trains);
+    const marker = L.marker([0, 0], {
+        icon: icon,
+        pane: 'trainsPane',
+        zIndexOffset: 1000 // Ensure trains are above stations
+    }).addTo(layers.trains);
 
     // Train Hover Label with Badge
     const tooltipHtml = `
