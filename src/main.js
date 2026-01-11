@@ -18,6 +18,11 @@ async function runApp() {
     const map = initMap();
     layers.citibike.addTo(map);
 
+    // Auto-Locate on Startup
+    if (window.triggerLocate) {
+        window.triggerLocate();
+    }
+
     createLegend(map, layers, async (color, checked) => {
         if (!checked) {
             layers.citibike.eachLayer(layer => {

@@ -37,13 +37,14 @@ export function initMap() {
         onAdd: function (map) {
             const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
             const button = L.DomUtil.create('a', 'leaflet-control-locate', container);
+            button.id = "btn-locate";
             button.href = "#";
             button.title = "Locate Me";
             button.role = "button";
 
             // Crosshair Icon (SVG)
             const arrowIcon = `
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="control-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="control-icon" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="8" x2="12" y2="16"></line>
                     <line x1="8" y1="12" x2="16" y2="12"></line>
@@ -52,23 +53,29 @@ export function initMap() {
             button.innerHTML = arrowIcon;
 
             let userMarker = null;
+            let userPulse = null;
+
+            const onLocate = () => {
+                button.innerHTML = `
+                    <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                    </svg>
+                `;
+                map.locate({ setView: false, enableHighAccuracy: true });
+            };
+
+            // Expose globally for main.js
+            window.triggerLocate = onLocate;
 
             L.DomEvent.on(button, 'click', function (e) {
                 L.DomEvent.stopPropagation(e);
                 L.DomEvent.preventDefault(e);
-
-                button.innerHTML = `
-                    <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-                    </svg>
-                `;
-
-                map.locate({ setView: false, enableHighAccuracy: true });
+                onLocate();
             });
 
             map.on('locationfound', (e) => {
                 // Smooth Fly
-                map.flyTo(e.latlng, 14, {
+                map.flyTo(e.latlng, 15, {
                     animate: true,
                     duration: 1.5
                 });
@@ -78,39 +85,31 @@ export function initMap() {
                 // Show Blue Dot
                 if (userMarker) {
                     userMarker.setLatLng(e.latlng);
+                    userPulse.setLatLng(e.latlng);
                 } else {
-                    // Inner dot
+                    userPulse = L.circleMarker(e.latlng, {
+                        radius: 12,
+                        fillColor: '#3b82f6',
+                        color: '#3b82f6',
+                        weight: 0,
+                        fillOpacity: 0.2,
+                        className: 'location-pulse'
+                    }).addTo(map);
+
                     userMarker = L.circleMarker(e.latlng, {
                         radius: 6,
-                        fillColor: '#3b82f6', // Blue-500
+                        fillColor: '#3b82f6',
                         color: '#ffffff',
                         weight: 2,
                         opacity: 1,
                         fillOpacity: 1
                     }).addTo(map);
-
-                    // Outer pulse/halo (separate marker for now)
-                    L.circleMarker(e.latlng, {
-                        radius: 12,
-                        fillColor: '#3b82f6',
-                        color: '#3b82f6',
-                        weight: 0,
-                        fillOpacity: 0.2
-                    }).addTo(map);
                 }
             });
 
             map.on('locationerror', (e) => {
-                alert("Could not access location: " + e.message);
-                button.innerHTML = `
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                `;
-                setTimeout(() => {
-                    button.innerHTML = arrowIcon;
-                }, 3000);
+                console.warn("Location access denied or failed:", e.message);
+                button.innerHTML = arrowIcon; // Just reset
             });
 
             return container;

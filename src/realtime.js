@@ -126,6 +126,7 @@ export function getMatchingTrip(tripId, routeId) {
             const groupKey = `${routeId}_${dir}`;
             const group = rtState.tripGroups.get(groupKey);
             if (group) {
+                let best = null;
                 let minDiff = 600; // 10 mins (NYC headways are often 8-12m)
 
                 for (const rtTrip of group) {
