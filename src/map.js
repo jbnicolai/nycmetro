@@ -28,6 +28,98 @@ export function initMap() {
 
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
+    // Locate Control
+    const LocateControl = L.Control.extend({
+        options: {
+            position: 'topleft'
+        },
+        onAdd: function (map) {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+            const button = L.DomUtil.create('a', 'leaflet-control-locate', container);
+            button.href = "#";
+            button.title = "Locate Me";
+            button.role = "button";
+            button.style.width = '30px';
+            button.style.height = '30px';
+            button.style.display = 'flex';
+            button.style.alignItems = 'center';
+            button.style.justifyContent = 'center';
+            button.style.backgroundColor = 'white';
+            button.style.cursor = 'pointer';
+
+            // Crosshair Icon (SVG)
+            const arrowIcon = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                    <line x1="8" y1="12" x2="16" y2="12"></line>
+                </svg>
+            `;
+            button.innerHTML = arrowIcon;
+
+            let userMarker = null;
+
+            L.DomEvent.on(button, 'click', function (e) {
+                L.DomEvent.stopPropagation(e);
+                L.DomEvent.preventDefault(e);
+
+                button.innerHTML = `
+                    <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                    </svg>
+                `;
+
+                map.locate({ setView: true, maxZoom: 16 });
+            });
+
+            map.on('locationfound', (e) => {
+                // Reset Icon
+                button.innerHTML = arrowIcon;
+
+                // Show Blue Dot
+                if (userMarker) {
+                    userMarker.setLatLng(e.latlng);
+                } else {
+                    // Inner dot
+                    userMarker = L.circleMarker(e.latlng, {
+                        radius: 6,
+                        fillColor: '#3b82f6', // Blue-500
+                        color: '#ffffff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 1
+                    }).addTo(map);
+
+                    // Outer pulse/halo (separate marker for now)
+                    L.circleMarker(e.latlng, {
+                        radius: 12,
+                        fillColor: '#3b82f6',
+                        color: '#3b82f6',
+                        weight: 0,
+                        fillOpacity: 0.2
+                    }).addTo(map);
+                }
+            });
+
+            map.on('locationerror', (e) => {
+                alert("Could not access location: " + e.message);
+                button.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                `;
+                setTimeout(() => {
+                    button.innerHTML = arrowIcon;
+                }, 3000);
+            });
+
+            return container;
+        }
+    });
+
+    map.addControl(new LocateControl());
+
     // Add Layers
     layers.neighborhoods.addTo(map);
     layers.routes.addTo(map);
