@@ -12,35 +12,24 @@ export function renderRouteBadge(routeId, routeInfo) {
 /**
  * Renders the status badge (Live, Delayed, Scheduled, Approaching)
  */
-export function renderStatusBadge(isLive, delayMins, isAtStation, isStopped) {
+export function renderStatusBadge(minsUntil, isLive, isAtStation) {
     if (!isLive) {
-        return `<span class="status-badge status-scheduled">Scheduled</span>`;
+        // Scheduled: Show countdown in gray
+        const text = minsUntil <= 0 ? "Now" : `${minsUntil} min`;
+        return `<span class="status-badge status-scheduled">${text}</span>`;
     }
 
-    if (isAtStation) {
-        if (isStopped) {
-            return `<span class="status-badge status-at-station">● At Station</span>`;
-        }
-        // Approaching logic (assumes caller handled the robust "close enough" check before passing isAtStation=true/false effectively, 
-        // OR we can pass predictedTime/time here. For simplicity, let's assume specific state flags passed in.)
-        // Actually, to match previous logic exactly, let's stick to status flags.
-        return `<span class="status-badge status-live">Approaching</span>`;
+    // Real-Time
+    if (isAtStation || minsUntil <= 0) {
+        return `<span class="status-badge status-at-station">At Station</span>`;
     }
 
-    // Normal Delay Logic
-    let delayText = "Live";
-    let badgeClass = "status-live";
-
-    // Check numeric delay
-    if (delayMins > 2) {
-        delayText = `+${delayMins} min`;
-        badgeClass = "status-delayed";
-    } else if (delayMins < -2) {
-        delayText = `${delayMins} min`;
-        // badgeClass remains status-live usually, or could be green
+    if (minsUntil < 1) {
+        return `<span class="status-badge status-live">Arriving</span>`;
     }
 
-    return `<span class="status-badge ${badgeClass}">${delayText}</span>`;
+    // Live Countdown
+    return `<span class="status-badge status-live">${minsUntil} min</span>`;
 }
 
 /**

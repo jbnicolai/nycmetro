@@ -35,12 +35,17 @@ export function parseProperties(feature) {
     return { name, lines };
 }
 
+export function unixToSecondsSinceMidnight(unixParams) {
+    if (!unixParams) return 0;
+    const date = new Date(unixParams * 1000);
+    return date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+}
+
 export function getDelayInSeconds(rt, scheduledStop) {
     if (!rt || !scheduledStop) return 0;
 
     // Normalize RT Time (Unix Epoch) to Seconds Since Midnight local time
-    const rtDate = new Date(rt.time * 1000);
-    const rtSeconds = rtDate.getHours() * 3600 + rtDate.getMinutes() * 60 + rtDate.getSeconds();
+    const rtSeconds = unixToSecondsSinceMidnight(rt.time);
 
     // Handle potential day wrapping comparison
     let diff = rtSeconds - scheduledStop.time;
