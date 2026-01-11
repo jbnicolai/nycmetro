@@ -8,6 +8,7 @@ export const rtState = {
     lastUpdate: 0,
     trips: new Map(), // Map<tripId, { status: "STOPPED_AT"|"IN_TRANSIT_TO", stopId, time, timestamp }>
     fuzzyTrips: new Map(), // Map<Time_Route_Dir, TripObject>
+    tripGroups: new Map(), // Map<Route_Dir, Array<{startTime, tripData}>>
     hasError: false
 };
 
@@ -48,6 +49,7 @@ async function fetchRealtimeData() {
         // Let's clear and rebuild for simplicity of "current snapshot"
         rtState.trips.clear();
         rtState.fuzzyTrips.clear();
+        rtState.tripGroups.clear();
 
         if (data.trips && Array.isArray(data.trips)) {
             data.trips.forEach(t => {
@@ -55,16 +57,33 @@ async function fetchRealtimeData() {
                 const tripData = { ...t, timestamp: Date.now() };
                 rtState.trips.set(t.tripId, tripData);
 
-                // Fuzzy Match (Time_Route_Dir)
-                // tripId expected format: 123456_R..D...
-                // We extract 123456_R and D.
+                // Fuzzy Match & Grouping
+                // tripId expected format: [TIME]_[ROUTE]..[DIR][VARIANT]
                 if (t.tripId && t.tripId.includes('..')) {
-                    const parts = t.tripId.split('..');
-                    if (parts.length >= 2) {
-                        const base = parts[0];
-                        const dir = parts[1].charAt(0);
-                        const key = `${base}_${dir}`;
-                        rtState.fuzzyTrips.set(key, tripData);
+                    const [left, right] = t.tripId.split('..');
+                    const dir = right.charAt(0);
+
+                    // Legacy key for exact time match
+                    rtState.fuzzyTrips.set(`${left}_${dir}`, tripData);
+
+                    // Robust Grouping
+                    const timeStr = left.split('_')[0];
+                    if (timeStr.length === 6) {
+                        const h = parseInt(timeStr.substring(0, 2));
+                        const m = parseInt(timeStr.substring(2, 4));
+                        const s = parseInt(timeStr.substring(4, 6));
+                        const startTimeSeconds = h * 3600 + m * 60 + s;
+
+                        const routeId = t.routeId;
+                        const groupKey = `${routeId}_${dir}`;
+
+                        if (!rtState.tripGroups.has(groupKey)) {
+                            rtState.tripGroups.set(groupKey, []);
+                        }
+                        rtState.tripGroups.get(groupKey).push({
+                            startTime: startTimeSeconds,
+                            data: tripData
+                        });
                     }
                 }
             });

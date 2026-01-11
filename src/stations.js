@@ -243,15 +243,47 @@ function showStationPopup(features, layer) {
         }
 
         // Helper to find RT data
-        const getRealtimeData = (tripId) => {
+        const getRealtimeData = (tripId, routeId) => {
             if (rtState.mode !== 'REALTIME') return null;
-            // Strict
+            // 1. Strict Match
             if (rtState.trips.has(tripId)) return rtState.trips.get(tripId);
-            // Fuzzy
+
+            // 2. Legacy Fuzzy (Split by ..)
             const parts = tripId.split('..');
             if (parts.length >= 2) {
-                const key = parts[0] + '_' + parts[1][0];
+                const [left, right] = parts;
+                const dir = right.charAt(0);
+                const key = `${left}_${dir}`;
                 if (rtState.fuzzyTrips.has(key)) return rtState.fuzzyTrips.get(key);
+
+                // 3. Proximity Matching (Robust NYC logic)
+                const timeStr = left.split('_')[0];
+                if (timeStr.length === 6) {
+                    const h = parseInt(timeStr.substring(0, 2));
+                    const m = parseInt(timeStr.substring(2, 4));
+                    const s = parseInt(timeStr.substring(4, 6));
+                    const schedStart = h * 3600 + m * 60 + s;
+
+                    const groupKey = `${routeId}_${dir}`;
+                    const group = rtState.tripGroups.get(groupKey);
+                    if (group) {
+                        // Find closest trip within 15 minutes (generous for late night)
+                        let best = null;
+                        let minDiff = 900; // 15 mins
+
+                        for (const rtTrip of group) {
+                            const diff = Math.abs(rtTrip.startTime - schedStart);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                best = rtTrip.data;
+                            }
+                        }
+                        if (best) {
+                            // console.log(`[Realtime] Matched ${tripId} with RT ${best.tripId} (Diff: ${minDiff}s)`);
+                            return best;
+                        }
+                    }
+                }
             }
             return null;
         };
@@ -285,7 +317,7 @@ function showStationPopup(features, layer) {
         const filterAndSort = (list) => {
             return list
                 .map(t => {
-                    const rt = getRealtimeData(t.tripId);
+                    const rt = getRealtimeData(t.tripId, t.routeId);
                     let delay = 0;
                     let isLive = false;
 
