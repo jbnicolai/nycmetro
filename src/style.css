@@ -215,7 +215,142 @@ h2 {
 }
 
 /* Leaflet Customizations */
-/* Leaflet Customizations */
+/* Leaflet Controls (Zoom & Locate) Redesign */
+.leaflet-bar {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.leaflet-bar a {
+    background-color: var(--sidebar-bg) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--sidebar-border) !important;
+    color: #fff !important;
+    width: 36px !important;
+    height: 36px !important;
+    line-height: 36px !important;
+    border-radius: 8px !important;
+    margin-bottom: 8px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.2s ease;
+}
+
+.leaflet-bar a:hover {
+    background-color: rgba(56, 189, 248, 0.2) !important;
+    border-color: var(--accent-color) !important;
+    color: var(--accent-color) !important;
+}
+
+.leaflet-bar a.leaflet-disabled {
+    opacity: 0.5;
+    background-color: var(--sidebar-bg) !important;
+    color: #888 !important;
+}
+
+/* Locate Icon Specifics */
+.control-icon {
+    stroke: #fff;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.leaflet-control-locate:hover .control-icon {
+    stroke: var(--accent-color);
+}
+
+/* Train Popup Styles */
+.train-popup {
+    min-width: 240px;
+}
+
+.train-header {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.train-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.train-route-badge {
+    color: #fff;
+    /* determined by contrast func usually, but default to white text if bg is dark */
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 1.1em;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.train-dest {
+    font-size: 0.85em;
+    color: #94a3b8;
+    margin-top: 2px;
+    display: block;
+}
+
+.train-info-grid {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px 12px;
+    align-items: center;
+}
+
+.train-info-label {
+    font-size: 0.75em;
+    color: #64748b;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.train-station-name {
+    color: #f1f5f9;
+    font-size: 0.95em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.train-time {
+    color: #fff;
+    font-family: monospace;
+    font-weight: 600;
+    font-size: 1.0em;
+}
+
+.train-realtime-badge {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    color: #34d399;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7em;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.blink-dot {
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+/* Leaflet Customizations - General */
 .leaflet-popup-content-wrapper {
     background: var(--sidebar-bg);
     /* Dark Glass */

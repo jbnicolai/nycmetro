@@ -331,6 +331,7 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
     };
 
     const color = routeInfo.color || '#333';
+    const textColor = getContrastColor ? getContrastColor(color) : '#fff'; // Assume global util or fallback
     const destName = getName(trip.stops[trip.stops.length - 1].id);
 
     // Time calculations
@@ -348,40 +349,53 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
             delayColor = "#ef4444"; // red
         } else if (delayMin < -1) {
             delayText = `(${delayMin}m)`;
-            delayColor = "#10b981";
-        } else {
-            delayText = ""; // On time, just show Live
+            // delayColor = "#10b981";
         }
 
         rtStatus = `
-            <div style="display:flex; align-items:center; gap:4px;">
-                <span style="background:${delayColor}; color:white; padding:2px 6px; border-radius:4px; font-size:0.7em; font-weight:bold; display:flex; align-items:center; gap:2px;">
-                    <span style="animation: pulse 2s infinite;">📶</span> Live
-                </span>
-                <span style="color:${delayColor}; font-size:0.8em; font-weight:bold;">${delayText}</span>
+            <div class="train-realtime-badge">
+                <span class="blink-dot"></span> Live ${delayText}
             </div>`;
     }
 
     // We only create the popup content once per segment change to avoid string thrashing every frame
     const content = `
-    <div class="train-popup" style="min-width: 220px; font-family: 'Inter', sans-serif;">
-        <div style="border-bottom: 2px solid ${color}; padding-bottom: 8px; margin-bottom: 8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2px;">
-                <strong style="color:${color}; font-size:1.2em;">${routeInfo.short_name} Train</strong>
-                ${rtStatus}
+    <div class="train-popup">
+        <div class="train-header">
+            <div class="station-dir-col">
+                <div class="train-title-row">
+                    <span class="train-route-badge" style="background:${color}; color:${textColor};">
+                        ${routeInfo.short_name}
+                    </span>
+                    <span style="font-weight:bold; color:#f1f5f9; font-size:1.1em;">Train</span>
+                </div>
+                <span class="train-dest">To ${destName}</span>
             </div>
-            <div style="font-size:0.85em; color:#94a3b8;">To ${destName}</div>
+            ${rtStatus}
         </div>
-        <div style="display:grid; grid-template-columns: 20px 1fr auto; gap:6px; align-items:center; font-size:0.95em;">
-            <span style="color:#cbd5e1;">⬇️</span> 
-            <span style="color:#f1f5f9;">${getName(next.id)}</span>
-            <span style="color:#fff; font-weight:bold; font-size:1.0em; font-family:monospace;">${formatTime(predictedNext)}</span>
+        
+        <div class="train-info-grid">
+            <!-- Next Station -->
+            <span class="train-info-label">Next</span>
+            <span class="train-station-name">${getName(next.id)}</span>
+            <span class="train-time">${formatTime(predictedNext)}</span>
 
-            <span style="color:#64748b; font-size:0.8em;">⬆️</span> 
-            <span style="color:#64748b; font-size:0.9em;">${getName(prev.id)}</span>
-            <span style="color:#94a3b8; font-size:0.85em; font-family:monospace;">${formatTime(predictedPrev)}</span>
+            <!-- Previous Station -->
+            <span class="train-info-label">Prev</span>
+            <span class="train-station-name" style="color:#94a3b8;">${getName(prev.id)}</span>
+            <span class="train-time" style="color:#94a3b8;">${formatTime(predictedPrev)}</span>
         </div>
     </div>`;
 
-    marker.bindPopup(content);
+    marker.bindPopup(content, { minWidth: 260 });
+}
+
+// Helper (duplicated from stations.js, ideally shared)
+function getContrastColor(hexColor) {
+    if (!hexColor) return '#fff';
+    const r = parseInt(hexColor.substr(1, 2), 16);
+    const g = parseInt(hexColor.substr(3, 2), 16);
+    const b = parseInt(hexColor.substr(5, 2), 16);
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? '#000' : '#fff';
 }

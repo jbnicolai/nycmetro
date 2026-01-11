@@ -38,31 +38,28 @@ export function createLegend(map, layers, fetchCitibikeFn) {
         </div>
         <div class="legend-scroll-area">
             
+            <!-- Subway Lines Filter -->
+             <div class="legend-section-title">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span>Subway Lines</span>
+                    <label style="display:flex; align-items:center; font-size:0.8em; color:#e2e8f0; cursor:pointer;">
+                        <input type="checkbox" id="cb-show-tracks" style="margin-right:4px;" checked> Tracks
+                    </label>
+                </div>
+                <button id="btn-toggle-all" class="btn-master-toggle">Hide All</button>
+            </div>
+            <div id="subway-toggles"></div>
+
             <!-- Citibike Section -->
-            <div class="legend-section-title">Citibike Availability</div>
+            <div class="legend-section-title">
+                <span>Citibike Availability</span>
+                <button id="btn-citi-toggle-all" class="btn-master-toggle">Hide All</button>
+            </div>
             <div id="citibike-toggles">
                  ${createToggleRow('cb-green', '#22c55e', '3+ E-bikes')}
                  ${createToggleRow('cb-yellow', '#fbbf24', 'Low / Classic')}
                  ${createToggleRow('cb-red', '#ef4444', 'Empty Station')}
             </div>
-
-            <!-- Subway Options -->
-            <div class="legend-section-title">
-                <span>Subway Options</span>
-            </div>
-            <div class="legend-row">
-                <label class="legend-label">
-                    <input type="checkbox" id="cb-show-tracks" class="legend-checkbox" checked>
-                    <span class="route-text">Show Tracks</span>
-                </label>
-            </div>
-
-            <!-- Subway Lines Filter -->
-             <div class="legend-section-title">
-                <span>Subway Lines</span>
-                <button id="btn-toggle-all" class="btn-master-toggle">Hide All</button>
-            </div>
-            <div id="subway-toggles"></div>
 
              <div style="margin-top:25px; border-top:1px solid rgba(255,255,255,0.1); padding-top:15px; font-size:0.8em; text-align:center;">
                 <a href="https://github.com/jbnicolai/nycmetro" target="_blank" style="color:rgba(255,255,255,0.5); text-decoration:none;">
@@ -90,15 +87,55 @@ export function createLegend(map, layers, fetchCitibikeFn) {
 
     // Citibike Listeners
     setTimeout(() => {
-        ['cb-green', 'cb-yellow', 'cb-red'].forEach(id => {
+        // Individual Toggles
+        const ids = ['cb-green', 'cb-yellow', 'cb-red'];
+        const container = document.getElementById('citibike-toggles');
+        const masterToggle = document.getElementById('btn-citi-toggle-all');
+
+        ids.forEach(id => {
             const el = document.getElementById(id);
             if (el) {
                 el.addEventListener('change', (e) => {
                     const color = id.split('-')[1];
                     fetchCitibikeFn(color, e.target.checked);
+                    updateCitiMasterState();
                 });
             }
         });
+
+        // Master Toggle Logic
+        if (masterToggle) {
+            // Init State
+            updateCitiMasterState();
+
+            masterToggle.onclick = () => {
+                const isHideAll = masterToggle.textContent === 'Hide All';
+                const newState = !isHideAll;
+
+                ids.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && el.checked !== newState) {
+                        el.checked = newState;
+                        // Manually trigger change
+                        const event = new Event('change');
+                        el.dispatchEvent(event);
+                    }
+                });
+                updateCitiMasterState();
+            };
+        }
+
+        function updateCitiMasterState() {
+            const inputs = ids.map(id => document.getElementById(id)).filter(el => el);
+            if (inputs.length === 0) return;
+            const allChecked = inputs.every(i => i.checked);
+            const someChecked = inputs.some(i => i.checked);
+
+            if (allChecked) masterToggle.textContent = 'Hide All';
+            else if (!someChecked) masterToggle.textContent = 'Show All';
+            else masterToggle.textContent = 'Show All';
+        }
+
     }, 100);
 }
 

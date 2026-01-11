@@ -40,17 +40,10 @@ export function initMap() {
             button.href = "#";
             button.title = "Locate Me";
             button.role = "button";
-            button.style.width = '30px';
-            button.style.height = '30px';
-            button.style.display = 'flex';
-            button.style.alignItems = 'center';
-            button.style.justifyContent = 'center';
-            button.style.backgroundColor = 'white';
-            button.style.cursor = 'pointer';
 
             // Crosshair Icon (SVG)
             const arrowIcon = `
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="control-icon">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="8" x2="12" y2="16"></line>
                     <line x1="8" y1="12" x2="16" y2="12"></line>
