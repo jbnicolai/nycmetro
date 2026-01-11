@@ -1,11 +1,43 @@
-import { parseProperties, formatTime } from './utils.js';
-import { rtState } from './realtime.js';
+import { parseProperties, formatTime, getDelayInSeconds } from './utils.js';
+import { rtState, getMatchingTrip } from './realtime.js';
 import { getActiveAlerts } from './alerts.js';
 
 let stationScheduleIndex = null;
 let rawSchedule = null;
+// Store markers for jumping
+const stationMarkers = new Map();
 
-// Pre-process schedule: { stationId_base: { N: [], S: [] } }
+
+
+
+
+// Expose global jumper
+window.flyToStation = (stationId) => {
+    // Try to find by base ID
+    // Try to find by base ID
+    let marker = stationMarkers.get(stationId);
+    if (!marker) {
+        // Try stripping direction suffix (e.g. "125S" -> "125")
+        const base = stationId.replace(/[NS]$/, '');
+        marker = stationMarkers.get(base);
+    }
+
+    if (!marker) {
+        // Try fuzzy? iterating map is slow but robust if needed
+        console.warn("Station not found:", stationId);
+        return;
+    }
+
+    // Fly to it
+    const map = marker._map; // Leaflet layer has _map if added
+    if (map) {
+        map.flyTo(marker.getLatLng(), 15, { animate: true, duration: 1.2 });
+        marker.fire('click'); // Trigger popup
+    }
+};
+
+
+
 function buildStationScheduleIndex(schedule) {
     if (!schedule || !schedule.routes) return;
     rawSchedule = schedule;
@@ -16,20 +48,27 @@ function buildStationScheduleIndex(schedule) {
         const trips = schedule.routes[routeId];
         trips.forEach(trip => {
             trip.stops.forEach(stop => {
-                const baseId = stop.id.substring(0, 3); // e.g., "101N" -> "101"
-                const dir = stop.id.slice(-1); // "N" or "S"
+                const baseId = stop.id.substring(0, 3);
+                const dir = stop.id.slice(-1);
 
                 if (!stationScheduleIndex[baseId]) {
                     stationScheduleIndex[baseId] = { N: [], S: [] };
                 }
 
-                // Store stop info
                 if (stationScheduleIndex[baseId][dir]) {
-                    stationScheduleIndex[baseId][dir].push({
-                        routeId: routeId,
-                        time: stop.time,
-                        tripId: trip.tripId
-                    });
+                    // Simple De-duplication: check if we already have this route at this time
+                    // (Assuming duplicates are due to multiple service_ids for different days)
+                    const existing = stationScheduleIndex[baseId][dir].find(
+                        item => item.routeId === routeId && item.time === stop.time
+                    );
+
+                    if (!existing) {
+                        stationScheduleIndex[baseId][dir].push({
+                            routeId: routeId,
+                            time: stop.time,
+                            tripId: trip.tripId
+                        });
+                    }
                 }
             });
         });
@@ -156,6 +195,12 @@ export function renderStations(geoJson, layerGroup, schedule, routes) {
             // Basic Tooltip
             marker.bindTooltip(item.name, { direction: 'top', className: 'subway-label' });
 
+            // Index for jumping
+            const sId = item.feature.properties.gtfs_stop_id;
+            if (sId) {
+                stationMarkers.set(sId, marker);
+            }
+
             // Add to map layer group
             marker.addTo(layerGroup);
             bundleLayers.push(marker);
@@ -242,52 +287,7 @@ function showStationPopup(features, layer) {
         }
         content += `<div class="station-badges">${badgesHtml}</div></div>`; // Close Header
 
-        // Helper to find RT data (Existing Logic)
-        const getRealtimeData = (tripId, routeId) => {
-            if (rtState.mode !== 'REALTIME') return null;
-            // 1. Strict Match
-            if (rtState.trips.has(tripId)) return rtState.trips.get(tripId);
-
-            // 2. Legacy Fuzzy (Split by ..)
-            const parts = tripId.split('..');
-            if (parts.length >= 2) {
-                const [left, right] = parts;
-                const dir = right.charAt(0);
-                const key = `${left}_${dir}`;
-                if (rtState.fuzzyTrips.has(key)) return rtState.fuzzyTrips.get(key);
-
-                // 3. Proximity Matching (Robust NYC logic)
-                const timeStr = left.split('_')[0];
-                if (timeStr.length === 6) {
-                    const h = parseInt(timeStr.substring(0, 2));
-                    const m = parseInt(timeStr.substring(2, 4));
-                    const s = parseInt(timeStr.substring(4, 6));
-                    const schedStart = h * 3600 + m * 60 + s;
-
-                    const groupKey = `${routeId}_${dir}`;
-                    const group = rtState.tripGroups.get(groupKey);
-                    if (group) {
-                        // Find closest trip within 15 minutes (generous for late night)
-                        let best = null;
-                        let minDiff = 900; // 15 mins
-
-                        for (const rtTrip of group) {
-                            const diff = Math.abs(rtTrip.startTime - schedStart);
-                            if (diff < minDiff) {
-                                minDiff = diff;
-                                best = rtTrip.data;
-                            }
-                        }
-                        if (best) {
-                            return best;
-                        }
-                    }
-                }
-            }
-            return null;
-        };
-
-        // Helper to calculate delay (Existing Logic)
+        // Helper to calculate delay (Restored)
         const getTripDelay = (tripId, rt) => {
             if (!rt || !rawSchedule || !rawSchedule.routes) return 0;
             const routeTrips = rawSchedule.routes[rt.routeId];
@@ -297,26 +297,18 @@ function showStationPopup(features, layer) {
             const trip = routeTrips.find(tr => tr.tripId === tripId);
             if (!trip) return 0;
 
+            // Check if RT stop is valid for this trip
             const currentStop = trip.stops.find(s => s.id === rt.stopId);
             if (!currentStop) return 0;
 
-            // Normalize RT Time (Unix Epoch) to Seconds Since Midnight local time
-            const rtDate = new Date(rt.time * 1000);
-            const rtSeconds = rtDate.getHours() * 3600 + rtDate.getMinutes() * 60 + rtDate.getSeconds();
-
-            // Handle potential day wrapping comparison
-            let diff = rtSeconds - currentStop.time;
-            if (diff < -43200) diff += 86400;
-            if (diff > 43200) diff -= 86400;
-
-            return diff;
+            return getDelayInSeconds(rt, currentStop);
         };
 
         // Filter & Sort Merged Lists with Live Data
         const filterAndSort = (list) => {
             return list
                 .map(t => {
-                    const rt = getRealtimeData(t.tripId, t.routeId);
+                    const rt = getMatchingTrip(t.tripId, t.routeId);
                     let delay = 0;
                     let isLive = false;
 
@@ -329,6 +321,16 @@ function showStationPopup(features, layer) {
                 })
                 .filter(t => t.predictedTime >= secondsSinceMidnight) // Filter by PREDICTED time
                 .sort((a, b) => a.predictedTime - b.predictedTime)
+                // Render-side Deduplication
+                .filter((t, index, self) => {
+                    // Check if there is a previous element with same RouteID and very similar time
+                    const prev = self[index - 1];
+                    if (!prev) return true;
+                    if (prev.routeId === t.routeId && Math.abs(prev.predictedTime - t.predictedTime) < 120) {
+                        return false; // Skip duplicate
+                    }
+                    return true;
+                })
                 .slice(0, 5);
         };
 
@@ -373,8 +375,36 @@ function showStationPopup(features, layer) {
                 const rt = t.rt;
                 const isAtStation = Array.from(stopIds).some(baseId => rt.stopId.startsWith(baseId));
 
-                if (isAtStation) {
+                // GTFS Realtime Status: 0=INCOMING_AT, 1=STOPPED_AT, 2=IN_TRANSIT_TO
+                // We only show "At Station" if status is STOPPED_AT (1).
+                // If implied or missing, we assume STOPPED_AT only if very close match, but let's rely on status if present.
+                // Note: The API might return string "STOPPED_AT" or int 1. Check both or standard.
+                // Assuming our backend passes the raw string or mapped string.
+
+                const isStopped = rt.currentStatus === 'STOPPED_AT' || rt.currentStatus === 1;
+
+                if (isAtStation && isStopped) {
                     statusBadge = `<span class="status-badge status-at-station">● At Station</span>`;
+                } else if (isAtStation) {
+                    // It is 'at' the station in terms of next update, but moving (INCOMING or IN_TRANSIT)
+                    // Only show "Approaching" if actually close (e.g. within 2 mins)
+                    const minsAway = (t.predictedTime - t.time) / 60;
+                    if (Math.abs(minsAway) <= 2) {
+                        statusBadge = `<span class="status-badge status-live">Approaching</span>`;
+                    } else {
+                        // Fallback to normal delay calc if it says "At Station" but time is far off (ghost train scenario)
+                        const delayMins = Math.round(minsAway);
+                        let delayText = "Live";
+                        if (delayMins > 2) {
+                            delayText = `+${delayMins} min`;
+                            statusBadge = `<span class="status-badge status-delayed">${delayText}</span>`;
+                        } else if (delayMins < -2) {
+                            delayText = `${delayMins} min`;
+                            statusBadge = `<span class="status-badge status-live">${delayText}</span>`;
+                        } else {
+                            statusBadge = `<span class="status-badge status-live">Live</span>`;
+                        }
+                    }
                 } else {
                     const delayMins = Math.round((t.predictedTime - t.time) / 60);
                     let delayText = "Live";
@@ -390,10 +420,11 @@ function showStationPopup(features, layer) {
                         statusBadge = `<span class="status-badge status-live">Live</span>`;
                     }
                 }
+            } else {
+                statusBadge = `<span class="status-badge status-scheduled">Scheduled</span>`;
             }
-
             return `
-            <div class="arrival-row">
+            <div class="arrival-row clickable-row" onclick="window.flyToTrain('${t.tripId}')">
                 <div class="arrival-left">
                     <span class="station-badge" style="background-color: ${color}; color: ${textColor};">${routeId}</span>
                     ${statusBadge}
@@ -421,5 +452,5 @@ function showStationPopup(features, layer) {
 
     content += `</div>`; // Close station-popup
 
-    layer.bindPopup(content, { maxWidth: 400, minWidth: 280 }).openPopup();
+    layer.bindPopup(content, { maxWidth: 420, minWidth: 340 }).openPopup();
 }
