@@ -1,5 +1,10 @@
 # NYC Real-Time Transit Map
 
+> [!IMPORTANT]
+> **Agent Instructions / Development Rules**:
+> 1. **DO NOT PUSH** changes to the remote repository without explicit user permission.
+> 2. Always verify code changes locally before asking to commit.
+
 A real-time visualization of the New York City transit system, combining MTA subway data with Citi Bike availability. The application renders train movements based on a hybrid system of static schedules and live GTFS-Realtime signal data.
 
 ![NYC Real-Time Transit Map](assets/app-screenshot.png)
@@ -73,3 +78,9 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 ### Performance
 - [x] **Payload Optimization**: Schedule data is lazily loaded and compressed.
 - [ ] **Binary Format**: Evaluation of migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing on mobile devices.
+- [ ] **Interaction**: Double-click on a line to enter "Focus Mode" (hide all other lines).
+- [ ] **Mobile Zoom**: Fix map zooming to avoid scaling the UI (mobile bug).
+- [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability to show traffic patterns.
+- [ ] **Legend Improvements**: Controls to enable/disable all stations or select specific ones easily.
+- [ ] **Smart Filtering**: Cache Citi Bike data to avoid reloading on filter changes (~30s TTL).
+- [ ] **Load Optimization**: Further improve initial load metrics and loading UI.
