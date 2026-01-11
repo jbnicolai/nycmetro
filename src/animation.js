@@ -200,7 +200,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             if (++yieldCounter % 5 === 0) await yieldToMain(); // Yield more often
 
             const routeId = normId(routeIdRaw);
-            if (visibilitySet && visibilitySet.has(routeId)) return;
+            if (visibilitySet && visibilitySet.has(routeId)) continue;
             const routeInfo = routes[routeIdRaw] || routes[routeId] || { color: '#ffffff', short_name: routeId };
 
             const isRtRoute = useRealtime && rtState.rtRouteIds.has(routeId);
@@ -614,6 +614,10 @@ const STATION_ALIASES = {
     'F17': 'B06'  // Roosevelt Island (Fallback for RT ID)
 };
 
+const MANUAL_COORDS = {
+    'G25': [40.7025, -73.8168], // Jamaica-Van Wyck
+};
+
 function getStopCoords(schedule, stopId) {
     if (!stopId) return null;
 
@@ -627,18 +631,28 @@ function getStopCoords(schedule, stopId) {
         if (s) return s;
     }
 
-    // 3. Suffix Stripping (e.g. "R01N" -> "R01")
+    // 3. Manual Coords Lookup
+    if (MANUAL_COORDS[stopId]) {
+        return MANUAL_COORDS[stopId];
+    }
+
+    // 4. Suffix Stripping (e.g. "R01N" -> "R01")
     if (stopId.length > 3) {
         const parentId = stopId.slice(0, -1);
 
-        // 3a. Parent Lookup
+        // 4a. Parent Lookup
         s = schedule.stops[parentId];
         if (s) return s;
 
-        // 3b. Parent Alias Lookup
+        // 4b. Parent Alias Lookup
         if (STATION_ALIASES[parentId]) {
             s = schedule.stops[STATION_ALIASES[parentId]];
             if (s) return s;
+        }
+
+        // 4c. Parent Manual Lookup
+        if (MANUAL_COORDS[parentId]) {
+            return MANUAL_COORDS[parentId];
         }
     }
 
