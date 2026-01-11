@@ -1,10 +1,15 @@
 
 export function formatTime(s) {
     if (s === undefined || s === null) return "--:--";
-    // Handle wrap around 24h (86400 seconds)
     const effectiveSeconds = s % 86400;
     const date = new Date(effectiveSeconds * 1000);
-    return date.toISOString().substr(11, 8);
+    // Use UTC to avoid timezone shifts since effectiveSeconds is from midnight
+    return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'UTC'
+    });
 }
 
 export function parseProperties(feature) {
