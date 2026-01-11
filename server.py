@@ -268,7 +268,7 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Window logic
                 start_window = seconds_since_midnight - 600 # 10 mins buffer
-                end_window = seconds_since_midnight + (4 * 3600) # 4 hours ahead
+                end_window = seconds_since_midnight + (2 * 3600) # 2 hours ahead
 
                 # Handle wraparound for late night (if near 24h, schedule might go > 86400)
                 # For simplicity, we just filter. Ideally we handle day overlap.
