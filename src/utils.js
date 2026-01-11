@@ -87,7 +87,17 @@ export function getContrastColor(hexColor) {
     return (yiq >= 128) ? '#000' : '#fff';
 }
 
-export const yieldToMain = () => new Promise(r => setTimeout(r, 0));
+export const yieldToMain = () => {
+    return new Promise(resolve => {
+        // Use requestAnimationFrame for higher priority tasks if needed, 
+        // but setTimeout(0) is standard for yielding to the event loop.
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(() => resolve(), { timeout: 100 });
+        } else {
+            setTimeout(resolve, 0);
+        }
+    });
+};
 
 /** Normalizes route IDs (e.g. "01" -> "1") for cross-feed consistency */
 export const normId = (id) => {
