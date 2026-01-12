@@ -131,7 +131,7 @@ async function runApp() {
         ]);
         window.startupMetrics.coreDataReady = performance.now();
 
-        StatusPanel.init();
+        StatusPanel.init(map);
         StatusPanel.update("routes", Object.keys(config.routes).length);
 
         // PHASE 2: Static Layer Initialization

@@ -183,7 +183,19 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                     highlightRouteTrack(marker.routeId);
                 }
 
-                map.flyTo(ll, 16, { animate: true, duration: 1.0 }); // Zoom in closer
+                // Mobile Offset Logic (Same as flyToStation)
+                const isMobile = window.innerWidth <= 600;
+                let targetLatLng = ll;
+
+                if (isMobile) {
+                    const zoom = 16;
+                    const point = map.project(ll, zoom);
+                    const offsetY = map.getSize().y * 0.25;
+                    const targetPoint = point.subtract([0, offsetY]);
+                    targetLatLng = map.unproject(targetPoint, zoom);
+                }
+
+                map.flyTo(targetLatLng, 16, { animate: true, duration: 1.0 }); // Zoom in closer
                 // Slight delay to allow flyTo to start
                 setTimeout(() => {
                     // Ensure popup content is fresh before opening

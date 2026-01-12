@@ -1,15 +1,18 @@
 export const StatusPanel = {
-    init() {
+    init(map) {
         // Create container if not exists
         if (document.getElementById('status-panel')) return;
 
+        // 1. Create the Panel (Hidden initially)
         const panel = document.createElement('div');
         panel.id = 'status-panel';
-        panel.className = 'status-panel';
+        panel.className = 'status-panel'; // Default is hidden via CSS or js
+        // Note: We'll rely on a separate toggle button now.
+        // But we keep the internal structure for content.
         panel.innerHTML = `
             <div class="status-header">
                 <span class="status-title">> SYSTEM_STATUS</span>
-                <button id="toggle-status" class="status-toggle">_</button>
+                <button id="close-status" class="status-toggle">x</button>
             </div>
             <div id="status-content" class="status-content">
                 <div class="status-row">
@@ -59,36 +62,48 @@ export const StatusPanel = {
                 <div id="status-log" class="status-log"></div>
             </div>
         `;
-        // Default to collapsed
-        panel.classList.add('collapsed');
+
+        // Append panel to body (overlay)
         document.body.appendChild(panel);
 
-        // Toggle Logic
-        const header = panel.querySelector('.status-header');
-        const content = document.getElementById('status-content');
-        const toggleBtn = document.getElementById('toggle-status');
+        // Initial State: Hidden
+        panel.style.display = 'none';
 
-        // Initial State
-        content.style.display = 'none';
+        // 2. Add Leaflet Control for Toggle
+        if (map) {
+            const DebugControl = L.Control.extend({
+                options: { position: 'bottomleft' },
+                onAdd: function () {
+                    const btn = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+                    const link = L.DomUtil.create('a', 'leaflet-control-debug', btn);
+                    link.href = '#';
+                    link.title = 'Toggle Debug Panel';
+                    link.role = 'button';
+                    link.innerHTML = '>'; // Integrated style
+                    link.style.fontWeight = 'bold';
+                    link.style.fontSize = '14px';
+                    link.style.color = '#000'; // Match standard leaflet controls logic (user can customize)
 
-        const toggle = () => {
-            const isCollapsed = panel.classList.toggle('collapsed');
-            content.style.display = isCollapsed ? 'none' : 'block';
-            toggleBtn.textContent = isCollapsed ? '+' : '_'; // Though header is hidden when collapsed
-        };
+                    L.DomEvent.on(link, 'click', (e) => {
+                        L.DomEvent.stopPropagation(e);
+                        L.DomEvent.preventDefault(e);
+                        const isVisible = panel.style.display === 'block';
+                        panel.style.display = isVisible ? 'none' : 'block';
+                    });
 
-        header.addEventListener('click', toggle);
-        toggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // prevent header click
-            toggle();
-        });
+                    return btn;
+                }
+            });
+            map.addControl(new DebugControl());
+        }
 
-        // Allow clicking the collapsed "bubble" to expand
-        panel.addEventListener('click', (e) => {
-            if (panel.classList.contains('collapsed')) {
-                toggle();
-            }
-        });
+        // Close Button Logic
+        const closeBtn = document.getElementById('close-status');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                panel.style.display = 'none';
+            };
+        }
 
         this.log("System Initialized.");
     },

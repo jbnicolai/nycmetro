@@ -1769,14 +1769,27 @@ body.rt-error .leaflet-control-container .leaflet-top {
     transform: scale(0.95);
 }
 
-@keyframes slideUp {
-    from {
-        transform: translate(-50%, 20px);
-        opacity: 0;
-    }
+to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+}
 
-    to {
-        transform: translate(-50%, 0);
-        opacity: 1;
-    }
+/* Debug Control Icon */
+.leaflet-control-debug {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    width: 30px;
+    /* Standard Leaflet dimension */
+    height: 30px;
+    text-decoration: none !important;
+}
+
+/* Status Panel Position Update to sit next to/above controls */
+.status-panel {
+    bottom: 50px !important;
+    /* Above controls */
+    left: 10px !important;
 }
