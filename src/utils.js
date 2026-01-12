@@ -113,7 +113,6 @@ export const STATION_ALIASES = {
     '229': '230',       // Bidirectional mapping often helps
 
     // R/M Line Mismatches (Live vs GTFS)
-    'R65': 'G19',       // Steinway St
     'R60': 'G16',       // Northern Blvd
     'G25': 'G07',       // Jamaica-Van Wyck
 

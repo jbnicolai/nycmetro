@@ -316,7 +316,19 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
         const bundleLayers = [];
 
         // Create markers for each item in bundle
+        // Create markers for each item in bundle
         bundle.forEach(item => {
+            // Invisible Hit Area (Larger)
+            const hitMarker = L.circleMarker(item.latlng, {
+                radius: 12, // Larger hit area (24px diameter)
+                fillColor: '#ffffff',
+                color: 'transparent',
+                weight: 0,
+                opacity: 0,
+                fillOpacity: 0,
+                pane: 'stationsPane' // Same pane as visible marker
+            });
+
             const marker = L.circleMarker(item.latlng, {
                 radius: 4.5,
                 fillColor: '#ffffff',
@@ -327,15 +339,25 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
                 pane: 'stationsPane'
             });
 
-            // Basic Tooltip
-            // Consistent Dark-Themed Tooltip
-            marker.bindTooltip(item.name, {
-                direction: 'top',
-                className: 'train-label station-hover-label', // Reuse train styles
-                offset: [0, -10],
-                opacity: 1,
-                sticky: true
-            });
+            // Bind Events Handlers
+            const openPopup = () => window.flyToStation(item.feature.properties.gtfs_stop_id);
+
+            const bindEvents = (m) => {
+                m.bindTooltip(item.name, {
+                    direction: 'top',
+                    className: 'train-label station-hover-label',
+                    offset: [0, -10],
+                    opacity: 1,
+                    sticky: true
+                });
+                m.on('click', openPopup);
+            };
+
+            bindEvents(hitMarker);
+            bindEvents(marker);
+
+            bundleLayers.push(hitMarker);
+            bundleLayers.push(marker);
 
             // Index for jumping
             const sId = item.feature.properties.gtfs_stop_id;
@@ -464,10 +486,37 @@ function showStationPopup(features, layer) {
         badgesHtml = lines.split('-').map(r => renderRouteBadge(r, routeConfigs[r])).join('');
     }
 
+    // Check Global Live Status (Only count future/recent arrivals)
+    const combinedAll = [...northList, ...southList];
+    const futureTrains = combinedAll.filter(t => {
+        let diff = t.predictedTime - currentSeconds;
+        if (diff < -43200) diff += 86400;
+        if (diff > 43200) diff -= 86400;
+        return diff >= -60; // Ignore trains departed > 1m ago
+    });
+
+    // Valid if we have future trains and ALL of them are live
+    const allLive = futureTrains.length > 0 && futureTrains.every(t => t.isLive);
+    const hasData = futureTrains.length > 0;
+
+    let liveBadgeHtml = '';
+    if (allLive) {
+        liveBadgeHtml = `<div class="train-realtime-badge">
+            <span class="blink-dot" style="background: #10b981;"></span> LIVE
+         </div>`;
+    } else if (hasData) {
+        liveBadgeHtml = `<div class="train-realtime-badge badge-gray">
+            SCHEDULED
+         </div>`;
+    }
+
     let content = `<div class="station-popup">
         <div class="station-header">
-            <h3 class="station-title">${name}</h3>
-            <div class="station-routes">${badgesHtml}</div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <h3 class="station-title" style="margin:0;">${name}</h3>
+                ${liveBadgeHtml}
+            </div>
+            <div class="station-routes" style="margin-top:4px;">${badgesHtml}</div>
         </div>`;
 
     // --- Alerts ---
@@ -549,6 +598,8 @@ function showStationPopup(features, layer) {
         const northHtml = renderList(northList, 'N');
         const southHtml = renderList(southList, 'S');
 
+        const combinedList = [...northList, ...southList];
+
         content += `<div class="station-body">
             <div class="station-dir-col">
                 <div class="dir-header">Northbound</div>
@@ -570,7 +621,6 @@ function showStationPopup(features, layer) {
                     
                     [...batchN, ...batchS].forEach(el => el.classList.remove('hidden-train-row'));
                     
-                    // Check if any remain hidden in either list
                     const remainN = document.querySelectorAll('#list-N .hidden-train-row').length;
                     const remainS = document.querySelectorAll('#list-S .hidden-train-row').length;
                     
@@ -586,7 +636,7 @@ function showStationPopup(features, layer) {
         content += `<div class="station-body"><div class="no-trains">No trains found.</div></div>`;
     }
 
-    content += `</div>`; // Close popup
+    content += `</div>`; // Close popup 
 
     // Update URL hash for deep linking
     const stopId = Array.from(stopIds)[0]; // Use first stop ID
