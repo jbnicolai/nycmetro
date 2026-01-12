@@ -215,19 +215,20 @@ function getIncomingTrains(stopIds, direction) {
                 const dirSchedule = scheduleObj[direction]; // 'N' or 'S'
 
                 if (dirSchedule) {
+                    // STRICT ISOLATION: 
+                    // If we have ANY live trains for this route/station, ignore schedule entirely.
+                    const liveRoutes = new Set(results.map(r => r.routeId));
+
                     dirSchedule.forEach(s => {
                         const sRouteId = normId(s.routeId);
-                        // REFINED SOFT ISOLATION:
-                        // If no live predictions for THIS SPECIFIC route/station combination,
-                        // allow scheduled fallback.
-                        // FIX: Allow 'departed' scheduled trains to show up even if live data exists for future trains,
-                        // because live feed drops past stops.
+                        if (liveRoutes.has(sRouteId)) return;
+
                         let t = s.time;
                         const diff = t - currentSeconds;
                         const adjDiff = (diff < -43200) ? diff + 86400 : (diff > 43200) ? diff - 86400 : diff;
 
-                        // UNION STRATEGY (Match Map Logic):
-                        // Always consider scheduled trains. Deduplicate against Live trains by ID or Time.
+                        // UNION STRATEGY:
+                        // Since we have strict isolation above, we just check time window.
 
                         if (adjDiff > -300 && adjDiff < 7200) {
                             // De-duplicate:
