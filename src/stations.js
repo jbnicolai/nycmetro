@@ -327,6 +327,24 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
             });
         });
     });
+
+    // 3. Update Search Index
+    const searchData = bundles.map(bundle => {
+        const item = bundle[0]; // Use leader
+
+        // Use shared helper to robustly extract lines (handles 'line', 'lines', 'Line', etc.)
+        const { lines } = parseProperties(item.feature);
+
+        return {
+            id: item.feature.properties.gtfs_stop_id,
+            name: item.name,
+            routes: lines.filter(x => x) // Filter empty strings
+        };
+    });
+
+    if (window.stationSearch) {
+        window.stationSearch.updateIndex(searchData, routeConfigs);
+    }
 }
 
 function highlightBundle(layers) {

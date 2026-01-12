@@ -31,7 +31,133 @@ body {
     /* Fallback for browsers that don't support dvh */
     height: 100vh;
     /* Dynamic Viewport Height (solves the mobile address bar issue) */
+    /* Dynamic Viewport Height (solves the mobile address bar issue) */
     height: 100dvh;
+}
+
+/* Station Search */
+#station-search-container {
+    position: absolute;
+    top: calc(20px + env(safe-area-inset-top));
+    right: 70px;
+    /* Left of the layer control? Or adjust if needed. Leaflet controls usually right. */
+    width: 260px;
+    z-index: 2000;
+}
+
+/* Make it fit better on top right, avoid overlapping potential layer controls */
+@media (max-width: 600px) {
+    #station-search-container {
+        top: calc(15px + env(safe-area-inset-top));
+        right: 60px;
+        /* Space for sidebar toggle if any, or adjust */
+        width: 200px;
+    }
+}
+
+#station-search-input {
+    width: 100%;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #fff;
+    font-family: var(--font-family);
+    font-size: 0.9rem;
+    outline: none;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+#station-search-input:focus {
+    border-color: var(--accent-color);
+    background: rgba(15, 23, 42, 0.95);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+#station-search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    margin-top: 6px;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+}
+
+#station-search-results.hidden {
+    display: none;
+}
+
+.search-result-item {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.15s;
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.search-name {
+    font-size: 0.9rem;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* margin-right: 8px; Removed to allow inline flow */
+}
+
+.search-routes-inline {
+    margin-left: 6px;
+    display: inline-flex;
+    gap: 4px;
+    vertical-align: middle;
+}
+
+/* Force small badges in search */
+.search-routes-inline .station-badge {
+    font-size: 0.75rem !important;
+    padding: 1px 4px !important;
+    min-width: 18px !important;
+    height: 18px !important;
+    line-height: 1.2 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: none !important;
+    cursor: pointer;
+    /* Inherit click */
+}
+
+/* Removed old .search-routes */
+
+.no-results {
+    color: #64748b;
+    font-style: italic;
+    cursor: default;
+}
+
+.no-results:hover {
+    background: transparent;
 }
 
 #app {
@@ -63,7 +189,7 @@ body {
 /* Sidebar - Glassmorphism */
 .sidebar {
     position: absolute;
-    top: 20px;
+    top: calc(20px + env(safe-area-inset-top));
     left: 20px;
     width: 350px;
     max-height: calc(100vh - 40px);
@@ -191,7 +317,7 @@ h2 {
 /* Secondary Train Loader (Toast) */
 .train-loader {
     position: absolute;
-    top: 20px;
+    top: calc(20px + env(safe-area-inset-top));
     left: 50%;
     transform: translateX(-50%);
     background: rgba(15, 23, 42, 0.9);

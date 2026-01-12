@@ -9,9 +9,13 @@ import { initRealtime } from './realtime.js';
 import { StatusPanel } from './status-panel.js';
 import { initAlerts } from './alerts.js';
 import { getInitialState, onHashChange } from './history.js';
+import { StationSearch } from './search.js'; // [NEW]
 
 // Add Citibike Layer to State
 layers.citibike = L.layerGroup();
+
+// Initialize Search Logic
+window.stationSearch = new StationSearch('station-search-container');
 
 async function runApp() {
     console.log("Initializing App (Modular)...");

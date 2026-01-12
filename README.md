@@ -113,6 +113,7 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - **Route 3 Live Data Missing**: The MTA's `nyct/gtfs` feed is currently not reporting any trips for Route 3 (Red line), causing it to fall back to the static schedule. This has been confirmed as an upstream data issue.
 - **Ghost Trains**: Greatly reduced by strict aliasing and data ingestion improvements, but occasional mismatches may occur during rerouting events.
 - **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
+- **Mobile Rendering**: Top offset is incorrect on some mobile devices, and the zoom icon can be obscured by the address bar.
 
 ## Development Workflow
 > [!IMPORTANT]
