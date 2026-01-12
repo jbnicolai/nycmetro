@@ -29,6 +29,11 @@ export function initMap() {
         pane.classList.add('layer-hidden');
     });
 
+    // Dedicated Pane for Highlighted Route (Above normal routes, below stations)
+    const highlightPane = map.createPane('highlightPane');
+    highlightPane.style.zIndex = 415;
+    highlightPane.classList.add('layer-hidden');
+
     // Dark Map Style (CartoDB Dark Matter)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -307,33 +312,50 @@ function validateCoords(coords) {
  * Brings the specified route's track to the front.
  * @param {string} routeId - The route ID (e.g. "E", "2")
  */
+let currentlyHighlightedId = null;
+
+/**
+ * Brings the specified route's track to the front by moving it to the highlightPane.
+ * @param {string} routeId - The route ID (e.g. "E", "2")
+ */
 export function highlightRouteTrack(routeId) {
-    if (!routeId || !layers.routeLayers) return;
+    if (!routeId || !layers.routeLayers || !layers.routes) return;
+    if (routeId === currentlyHighlightedId) return; // Already highlighted
 
-    // Reset logic: We generally want the selected one on top.
-    // We don't necessarily need to push EVERYTHING else back, 
-    // just ensure the target one is last in the visual stack.
-    const targetLayer = layers.routeLayers[routeId];
+    // 1. Demote previous highlight (if any)
+    if (currentlyHighlightedId && layers.routeLayers[currentlyHighlightedId]) {
+        const prevLayer = layers.routeLayers[currentlyHighlightedId];
 
-    if (targetLayer) {
-        // Strategy: Push EVERY other route to the back, then bring target to front.
-        Object.entries(layers.routeLayers).forEach(([id, layerGroup]) => {
-            if (id === routeId) return; // Skip target for now
+        // Remove, reset pane, re-add
+        if (layers.routes.hasLayer(prevLayer)) {
+            layers.routes.removeLayer(prevLayer);
 
-            if (layerGroup.eachLayer) {
-                layerGroup.eachLayer(layer => {
-                    if (layer.bringToBack) layer.bringToBack();
-                });
+            if (prevLayer.eachLayer) {
+                prevLayer.eachLayer(l => l.options.pane = 'routesPane');
+            } else {
+                prevLayer.options.pane = 'routesPane';
             }
-        });
 
-        // Now bring target to front
-        if (targetLayer.eachLayer) {
-            targetLayer.eachLayer(layer => {
-                if (layer.bringToFront) layer.bringToFront();
-            });
-        } else if (targetLayer.bringToFront) {
-            targetLayer.bringToFront();
+            layers.routes.addLayer(prevLayer);
         }
+    }
+
+    // 2. Promote new highlight
+    const targetLayer = layers.routeLayers[routeId];
+    if (targetLayer) {
+        // Remove, set pane, re-add
+        if (layers.routes.hasLayer(targetLayer)) {
+            layers.routes.removeLayer(targetLayer);
+
+            if (targetLayer.eachLayer) {
+                targetLayer.eachLayer(l => l.options.pane = 'highlightPane');
+            } else {
+                targetLayer.options.pane = 'highlightPane';
+            }
+
+            layers.routes.addLayer(targetLayer);
+        }
+        currentlyHighlightedId = routeId;
+        console.log(`[Map] Highlighted route ${routeId} (Pane Strategy).`);
     }
 }
