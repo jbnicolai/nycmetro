@@ -3,6 +3,7 @@ import { StatusPanel } from './status-panel.js';
 import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight, yieldToMain, normId } from './utils.js';
 import { rtState, getMatchingTrip, registerMatch } from './realtime.js';
 import { renderRouteBadge, renderStatusBadge, renderTimelineRow, renderTrainFooter } from './ui.js';
+import { updateHash } from './history.js';
 
 
 // Remove local getContrastColor helper at bottom of file if exists (it does)
@@ -10,8 +11,33 @@ import { renderRouteBadge, renderStatusBadge, renderTimelineRow, renderTrainFoot
 // Update updateMarkerPopup
 function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isRealtime, delay) {
     const getName = (id) => {
-        const s = schedule.stops[id];
-        return s ? s[2] : id;
+        if (!id) return id;
+
+        // Try direct lookup
+        let s = schedule.stops[id];
+        if (s) return s[2];
+
+        // Try alias lookup
+        if (STATION_ALIASES[id]) {
+            s = schedule.stops[STATION_ALIASES[id]];
+            if (s) return s[2];
+        }
+
+        // Try parent ID (strip suffix like N/S)
+        if (id.length > 3) {
+            const parentId = id.slice(0, -1);
+            s = schedule.stops[parentId];
+            if (s) return s[2];
+
+            // Try parent alias
+            if (STATION_ALIASES[parentId]) {
+                s = schedule.stops[STATION_ALIASES[parentId]];
+                if (s) return s[2];
+            }
+        }
+
+        // Fallback to ID
+        return id;
     };
 
     const destName = getName(trip.stops[trip.stops.length - 1].id);
@@ -36,13 +62,26 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
     let nextIndex = trip.stops.findIndex(s => s.id === next.id && s.time === next.time);
     if (nextIndex === -1) nextIndex = 0;
 
+    // Check if train is dwelling at the next station
+    const currentTime = (Date.now() / 1000) % 86400;
+    const adjustedTime = currentTime - (delay || 0);
+    const prevTime = prev.time;
+    const nextTime = next.time;
+    const totalDuration = nextTime - prevTime;
+    const DWELL_TIME = 25;
+    const dwellForThisStretch = Math.min(DWELL_TIME, totalDuration * 0.5);
+    const moveDuration = totalDuration - dwellForThisStretch;
+    const elapsed = adjustedTime - prevTime;
+    const isDwelling = elapsed >= moveDuration;
+
     const startIdx = Math.max(0, nextIndex - 3);
     const endIdx = Math.min(trip.stops.length, nextIndex + 5);
     const stopSubset = trip.stops.slice(startIdx, endIdx);
 
     const rowsHtml = stopSubset.map((stop, i) => {
         const absoluteIndex = startIdx + i;
-        const isPast = absoluteIndex < nextIndex;
+        // When dwelling at a station, keep that station marked as "next" (current), not "past"
+        const isPast = absoluteIndex < (isDwelling ? nextIndex : nextIndex);
         const isNext = absoluteIndex === nextIndex;
         const stopName = getName(stop.id);
 
@@ -81,6 +120,43 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
             minWidth: 340,
             maxWidth: 360,
             autoPan: false
+        });
+
+        // Store trip reference for popup updates
+        marker.tripData = { trip, routeInfo, schedule };
+
+        // Set hash when popup opens and force refresh on first open
+        marker.on('popupopen', () => {
+            updateHash('train', trip.tripId, { replace: false });
+
+            // Force immediate popup refresh on first open to bypass segment cache
+            if (!marker.popupOpened && marker.tripData) {
+                marker.popupOpened = true;
+
+                // Find current segment to regenerate popup immediately
+                const currentTime = Date.now() / 1000;
+                const currentSec = (currentTime % 86400);
+
+                let nextStop = null;
+                let prevStop = null;
+
+                for (let i = 0; i < marker.tripData.trip.stops.length; i++) {
+                    const stop = marker.tripData.trip.stops[i];
+                    if (stop.time > currentSec) {
+                        nextStop = stop;
+                        prevStop = marker.tripData.trip.stops[Math.max(0, i - 1)];
+                        break;
+                    }
+                }
+
+                if (nextStop && prevStop) {
+                    // Force popup update immediately
+                    const isRealtime = marker.isRealtime || false;
+                    const delay = marker.currentDelay || 0;
+                    updateMarkerPopup(marker, marker.tripData.trip, marker.tripData.routeInfo,
+                        prevStop, nextStop, marker.tripData.schedule, isRealtime, delay);
+                }
+            }
         });
     }
 }
@@ -139,7 +215,11 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
             if (map) {
                 map.flyTo(ll, 16, { animate: true, duration: 1.0 }); // Zoom in closer
                 // Slight delay to allow flyTo to start
-                setTimeout(() => marker.openPopup(), 400);
+                setTimeout(() => {
+                    marker.openPopup();
+                    // Update URL hash for deep linking
+                    updateHash('train', tripId, { replace: false });
+                }, 400);
             }
         } else {
             console.warn("Train not found or not currently active:", tripId);
