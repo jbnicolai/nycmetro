@@ -67,6 +67,8 @@ window.flyToStation = (stationId) => {
             targetLatLng = map.unproject(targetPoint, zoom);
         }
 
+        map.flyTo(targetLatLng, 15, { animate: true, duration: 1.2 });
+
         // Delay popup slightly to allow move start
         setTimeout(() => {
             if (marker._features) {
