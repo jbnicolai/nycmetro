@@ -1,4 +1,4 @@
-import { layers, highlightRouteTrack } from './map.js';
+import { layers, highlightRouteTrack, getMobileOffsetCenter } from './map.js';
 import { StatusPanel } from './status-panel.js';
 import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight, yieldToMain, normId, STATION_ALIASES } from './utils.js';
 import { rtState, getMatchingTrip, registerMatch } from './realtime.js';
@@ -54,6 +54,20 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
     // Check if train is dwelling at the next station
     const currentTime = (Date.now() / 1000) % 86400;
     const adjustedTime = currentTime - (delay || 0);
+
+    // [FOLLOW_LOGIC]
+    if (window.followingTripId === trip.tripId && marker._map) {
+        // Only pan if user hasn't interferred (we'll assume map.panTo is safe here)
+        // Actually, we should check if the map is currently dragging?
+        // Let's assume the listeners on dragstart clear the ID, so if we are here, we are good.
+        const ll = marker.getLatLng();
+
+        // Use the Mobile Offset Logic
+        // We need to import getMobileOffsetCenter or dup it?
+        // Ideally import it. But `updateMarkerPopup` is not where we pan.
+        // We pan in `updateTrainPosition`.
+    }
+
     const prevTime = prev.time;
     const nextTime = next.time;
     const totalDuration = nextTime - prevTime;
@@ -195,9 +209,26 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                     targetLatLng = map.unproject(targetPoint, zoom);
                 }
 
+                // Follow Logic: Set active ID
+                window.followingTripId = tripId;
+
                 map.flyTo(targetLatLng, 16, { animate: true, duration: 1.0 }); // Zoom in closer
+
+                // Add one-time listener to clear follow on manual interaction
+                const stopFollow = () => {
+                    window.followingTripId = null;
+                    map.off('dragstart zoomstart', stopFollow);
+                };
+                map.off('dragstart zoomstart', stopFollow); // Clear prev
+                map.on('dragstart zoomstart', stopFollow);
+
                 // Slight delay to allow flyTo to start
                 setTimeout(() => {
+                    // Re-assert follow in case flyTo drifted (optional)
+                    if (window.followingTripId === tripId) {
+                        // Ensure we are locked on
+                    }
+
                     // Ensure popup content is fresh before opening
                     if (marker.tripData && marker.currentPrev && marker.currentNext) {
                         updateMarkerPopup(
@@ -570,6 +601,19 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
     marker.currentNext = next;
     marker.isRealtime = isRealtime;
     marker.currentDelay = targetDelay;
+
+    // [FOLLOW_LOGIC]
+    if (window.followingTripId === trip.tripId && marker._map) {
+        // Only pan if user hasn't interferred (we'll assume map.panTo is safe here)
+        // Actually, we should check if the map is currently dragging?
+        // Let's assume the listeners on dragstart clear the ID, so if we are here, we are good.
+        const ll = marker.getLatLng();
+
+        // Use the Mobile Offset Logic
+        // We import getMobileOffsetCenter 
+        const target = getMobileOffsetCenter(marker._map, ll);
+        marker._map.panTo(target, { animate: false }); // Smooth lock (no animation per frame)
+    }
 
     // 2. Calculate Progress (t) with Simulation of Wait Time (Dwell)
     // Assume stops[i].time is DEPARTURE time.
