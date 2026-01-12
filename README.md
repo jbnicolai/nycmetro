@@ -77,6 +77,7 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 ├── run_dev.sh             # Dev startup script
 ├── scripts/
 │   ├── update_data.py     # ETL script to download/process GTFS data
+│   ├── build_stops_json.py# Extract simple coordinate map (ID -> Lat/Lon) from stops.txt
 │   └── optimize_geojson.py# Utility to minify shape data
 ├── src/                   # Frontend Source Code
 │   ├── main.js            # App initialization & core logic
@@ -100,6 +101,7 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 ### Visuals & UX
 - [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
 - [x] **Mobile Zoom**: Fix map zooming to avoid scaling the UI.
+- [ ] **Track Z-Index on Selection**: Render the selected train's track on top of other tracks (e.g., blue E train track on top of orange F track).
 - [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
 - [x] **Browser History**: Implement back/undo navigation for station and train selections.
 - [x] **Deep Linking**: Support deep linking to trains/stations via URL hash.
@@ -107,14 +109,13 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 ### Compliance & Architecture
 - [ ] **Progressive Web App (PWA)**: Implement PWA features for offline availability of the app and subway schedule data.
 - [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
-- [ ] **Smart Matching**: Improve ID matching algorithm (fuzzy route/direction matching) to link more live trains to the schedule.
+- [x] **Smart Matching**: Improved robustness via strict aliasing for known ID mismatches (Wall St, Steinway St, etc).
 - [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
 - [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
 
 ## Known Issues
 - **Route 3 Live Data Missing**: The MTA's `nyct/gtfs` feed is currently not reporting any trips for Route 3 (Red line), causing it to fall back to the static schedule. This has been confirmed as an upstream data issue.
-- **Ghost Trains**: Some real-time trips may not match perfectly to the static schedule, resulting in "Unknown" destinations or missing stops.
-- **Incorrect Train Instance Selection**: Station links for upcoming trains do not always center on the correct train instance.
+- **Ghost Trains**: Greatly reduced by strict aliasing and data ingestion improvements, but occasional mismatches may occur during rerouting events.
 - **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
 
 ## Development Workflow
