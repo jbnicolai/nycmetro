@@ -37,8 +37,39 @@ window.flyToStation = (stationId) => {
     // Fly to it
     const map = marker._map;
     if (map) {
-        map.flyTo(marker.getLatLng(), 15, { animate: true, duration: 1.2 });
-        marker.fire('click'); // Trigger popup
+        const latlng = marker.getLatLng();
+
+        // Mobile Offset Logic:
+        // Position the station in the bottom 75% (approx) so the popup (opening upwards)
+        // has space below the top search bar.
+        // We calculate a new center point that is "above" the station.
+
+        const isMobile = window.innerWidth <= 600;
+        let targetLatLng = latlng;
+
+        if (isMobile) {
+            // Project to pixel coordinates at current zoom (or target zoom 15)
+            const zoom = 15;
+            const point = map.project(latlng, zoom);
+
+            // Shift the center UP by 25% of screen height (placing station 25% down from center -> 75% down from top)
+            // Wait, coordinate system: (0,0) top-left.
+            // Screen Height H.
+            // Center is H/2. 
+            // We want station at 0.75 * H.
+            // So pixel offset = 0.75*H - 0.5*H = 0.25*H (positive Y = down).
+            // So the center needs to be shifted UP relative to station? 
+            // No, the station needs to be below center.
+            // Center Y = Station Y - Offset.
+
+            const offsetY = map.getSize().y * 0.25; // 1/4 screen height
+            const targetPoint = point.subtract([0, offsetY]); // Shift target center UP
+            targetLatLng = map.unproject(targetPoint, zoom);
+        }
+
+        map.flyTo(targetLatLng, 15, { animate: true, duration: 1.2 });
+        // Delay popup slightly to allow move start
+        setTimeout(() => marker.fire('click'), 100);
     }
 };
 
@@ -332,13 +363,20 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
     const searchData = bundles.map(bundle => {
         const item = bundle[0]; // Use leader
 
-        // Use shared helper to robustly extract lines (handles 'line', 'lines', 'Line', etc.)
-        const { lines } = parseProperties(item.feature);
+        // Aggregate lines from ALL items in the bundle
+        const allRoutes = new Set();
+        bundle.forEach(bItem => {
+            const { lines } = parseProperties(bItem.feature);
+            lines.forEach(line => {
+                if (line) allRoutes.add(line);
+            });
+        });
 
+        // Use leader for ID and Name, but aggregated routes
         return {
             id: item.feature.properties.gtfs_stop_id,
             name: item.name,
-            routes: lines.filter(x => x) // Filter empty strings
+            routes: Array.from(allRoutes)
         };
     });
 

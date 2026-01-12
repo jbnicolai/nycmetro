@@ -45,12 +45,12 @@ export function initMap() {
         maxZoom: 20
     }).addTo(map);
 
-    L.control.zoom({ position: 'topleft' }).addTo(map);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
     // Locate Control
     const LocateControl = L.Control.extend({
         options: {
-            position: 'topleft'
+            position: 'bottomleft'
         },
         onAdd: function (map) {
             const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
