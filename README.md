@@ -98,22 +98,22 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 
 ## Roadmap
 
-### Visuals & UX
-- [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
-- [x] **Track Z-Index on Selection**: Render the selected train's track on top of other tracks (e.g., blue E train track on top of orange F track).
-- [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
-
-### Compliance & Architecture
-- [ ] **Progressive Web App (PWA)**: Implement PWA features for offline availability of the app and subway schedule data.
-- [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
-- [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
-- [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
-
-## Known Issues
-- **Route 3 Live Data Missing**: The MTA's `nyct/gtfs` feed is currently not reporting any trips for Route 3 (Red line), causing it to fall back to the static schedule. This has been confirmed as an upstream data issue.
-- **Ghost Trains**: Greatly reduced by strict aliasing and data ingestion improvements, but occasional mismatches may occur during rerouting events.
-- **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
-- **Mobile Rendering**: Top offset is incorrect on some mobile devices, and the zoom icon can be obscured by the address bar.
+101: ### Visuals & UX
+102: - [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
+103: - [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
+104: - [ ] **Restyle Debug Menu**: Update the status panel (`SYSTEM_STATUS`) to match the glassmorphic aesthetics of the search bar and other UI elements.
+105: 
+106: ### Compliance & Architecture
+107: - [ ] **Progressive Web App (PWA)**: Implement PWA features for offline availability of the app and subway schedule data.
+108: - [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
+109: - [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
+110: - [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
+111: 
+112: ## Known Issues
+113: - **Route 3 Live Data Missing**: The MTA's `nyct/gtfs` feed is currently not reporting any trips for Route 3 (Red line), causing it to fall back to the static schedule. This has been confirmed as an upstream data issue.
+114: - **Ghost Trains**: Greatly reduced by strict aliasing and data ingestion improvements, but occasional mismatches may occur during rerouting events.
+115: - **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
+116:
 
 ## Development Workflow
 > [!IMPORTANT]

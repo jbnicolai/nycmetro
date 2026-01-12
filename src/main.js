@@ -20,6 +20,8 @@ window.stationSearch = new StationSearch('station-search-container');
 async function runApp() {
     console.log("Initializing App (Modular)...");
 
+    StatusPanel.init();
+
     // Set App Version
     const CURRENT_VERSION = '1.1.0';
     StatusPanel.update('version', CURRENT_VERSION);

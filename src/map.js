@@ -276,8 +276,24 @@ export function toggleRouteLayer(routeId, show) {
 export function toggleRouteLayerBatch(routeIds, show) {
     // 1. Update Visibility Filter Set
     routeIds.forEach(id => {
-        if (show) visibilityFilter.delete(id);
-        else visibilityFilter.add(id);
+        if (show) {
+            visibilityFilter.delete(id);
+        } else {
+            visibilityFilter.add(id);
+            // If we are hiding this route, also remove any active highlight/overlay for it
+            if (map && map.hasLayer(highlightOverlayLayer)) {
+                // A bit blunt to remove the whole layer, but since highlight is usually single-route, it's safe.
+                // Ideally we check if the highlight belongs to *this* route.
+                // But `highlightOverlayLayer` is currently a single global group for "the" highlighted track.
+                // So if ANY track is hidden, we might as well clear the highlight to be safe,
+                // OR we check if we are hiding the CURRENTLY highlighted route.
+                // For now, let's just clear it if the user is explicitly hiding tracks, to avoid "ghost" highlights.
+                // Better: clear it only if it matches. But we don't store the "active" highlight ID easily globally.
+                // Let's just clear it. It's a "reset" interaction.
+                map.removeLayer(highlightOverlayLayer);
+                highlightOverlayLayer.clearLayers();
+            }
+        }
     });
 
     // 2. Batch Update Layers (Use requestAnimationFrame if list is huge)
