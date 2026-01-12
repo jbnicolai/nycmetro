@@ -1,4 +1,4 @@
-import { parseProperties, formatTime, getDelayInSeconds, unixToSecondsSinceMidnight, yieldToMain, normId } from './utils.js';
+import { parseProperties, formatTime, getDelayInSeconds, unixToSecondsSinceMidnight, yieldToMain, normId, STATION_ALIASES } from './utils.js';
 import { rtState, getMatchingTrip, getScheduledIdForRt } from './realtime.js';
 import { getActiveAlerts } from './alerts.js';
 import { renderRouteBadge, renderStatusBadge } from './ui.js';
@@ -359,6 +359,14 @@ function showStationPopup(features, layer) {
             stopIds.add(id);
             stopIds.add(id + 'N');
             stopIds.add(id + 'S');
+
+            // Add Aliases (e.g. if map has 230, also check 229)
+            if (STATION_ALIASES[id]) {
+                const alias = STATION_ALIASES[id];
+                stopIds.add(alias);
+                stopIds.add(alias + 'N');
+                stopIds.add(alias + 'S');
+            }
         }
     });
 

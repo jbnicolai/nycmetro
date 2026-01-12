@@ -1,6 +1,6 @@
 import { layers } from './map.js';
 import { StatusPanel } from './status-panel.js';
-import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight, yieldToMain, normId } from './utils.js';
+import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight, yieldToMain, normId, STATION_ALIASES } from './utils.js';
 import { rtState, getMatchingTrip, registerMatch } from './realtime.js';
 import { renderRouteBadge, renderStatusBadge, renderTimelineRow, renderTrainFooter } from './ui.js';
 import { updateHash } from './history.js';
@@ -17,26 +17,15 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
         let s = schedule.stops[id];
         if (s) return s[2];
 
-        // Try alias lookup
-        if (STATION_ALIASES[id]) {
-            s = schedule.stops[STATION_ALIASES[id]];
-            if (s) return s[2];
-        }
-
         // Try parent ID (strip suffix like N/S)
         if (id.length > 3) {
             const parentId = id.slice(0, -1);
             s = schedule.stops[parentId];
             if (s) return s[2];
-
-            // Try parent alias
-            if (STATION_ALIASES[parentId]) {
-                s = schedule.stops[STATION_ALIASES[parentId]];
-                if (s) return s[2];
-            }
         }
 
-        // Fallback to ID
+        // Fallback to ID (do NOT use STATION_ALIASES for names - 
+        // they are for coord lookup only and can cause wrong names)
         return id;
     };
 
@@ -88,6 +77,11 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
         return renderTimelineRow({ ...stop, name: stopName }, isNext, isPast, routeInfo.color || '#333', delay);
     }).join('');
 
+    // Debug: Log if timeline rows are being generated
+    if (!rowsHtml || rowsHtml.indexOf('timeline-dot') === -1) {
+        console.warn('[updateMarkerPopup] Timeline rows missing dots! tripId:', trip.tripId, 'rowsHtml length:', rowsHtml.length);
+    }
+
     // 3. Footer
     const footerHtml = renderTrainFooter(
         { ...trip.stops[0], name: getName(trip.stops[0].id) },
@@ -113,52 +107,24 @@ function updateMarkerPopup(marker, trip, routeInfo, prev, next, schedule, isReal
     </div>`;
 
     if (marker.getPopup()) {
-        marker.setPopupContent(content);
-    } else {
-        marker.bindPopup(content, {
-            className: 'train-leaflet-popup',
-            minWidth: 340,
-            maxWidth: 360,
-            autoPan: false
-        });
-
-        // Store trip reference for popup updates
-        marker.tripData = { trip, routeInfo, schedule };
-
-        // Set hash when popup opens and force refresh on first open
-        marker.on('popupopen', () => {
-            updateHash('train', trip.tripId, { replace: false });
-
-            // Force immediate popup refresh on first open to bypass segment cache
-            if (!marker.popupOpened && marker.tripData) {
-                marker.popupOpened = true;
-
-                // Find current segment to regenerate popup immediately
-                const currentTime = Date.now() / 1000;
-                const currentSec = (currentTime % 86400);
-
-                let nextStop = null;
-                let prevStop = null;
-
-                for (let i = 0; i < marker.tripData.trip.stops.length; i++) {
-                    const stop = marker.tripData.trip.stops[i];
-                    if (stop.time > currentSec) {
-                        nextStop = stop;
-                        prevStop = marker.tripData.trip.stops[Math.max(0, i - 1)];
-                        break;
-                    }
-                }
-
-                if (nextStop && prevStop) {
-                    // Force popup update immediately
-                    const isRealtime = marker.isRealtime || false;
-                    const delay = marker.currentDelay || 0;
-                    updateMarkerPopup(marker, marker.tripData.trip, marker.tripData.routeInfo,
-                        prevStop, nextStop, marker.tripData.schedule, isRealtime, delay);
-                }
-            }
-        });
+        marker.unbindPopup();
     }
+
+    marker.bindPopup(content, {
+        className: 'train-leaflet-popup',
+        minWidth: 340,
+        maxWidth: 360,
+        autoPan: false
+    });
+
+    // Store trip reference
+    marker.tripData = { trip, routeInfo, schedule };
+
+    // When popup opens, update URL hash
+    marker.off('popupopen');
+    marker.on('popupopen', () => {
+        updateHash('train', trip.tripId, { replace: false });
+    });
 }
 
 let activeMarkers = {}; // tripId -> Marker
@@ -171,7 +137,7 @@ const turf = window.turf;
 /**
  * Main Entry Point: Start Animation Loop
  */
-export async function startTrainAnimation(shapes, routes, schedule, visibilitySet) {
+export async function startTrainAnimation(shapes, routes, schedule, visibilitySet, stopsCoords) {
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
     // Clear existing
@@ -181,7 +147,6 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
     // Expose Global Helper
     window.flyToTrain = (tripId) => {
         StatusPanel.log(`🔍 Looking for train: ${tripId}`);
-        console.log(`flyToTrain called for ${tripId}`);
         // Try direct lookup
         let marker = activeMarkers[tripId];
 
@@ -216,6 +181,19 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
                 map.flyTo(ll, 16, { animate: true, duration: 1.0 }); // Zoom in closer
                 // Slight delay to allow flyTo to start
                 setTimeout(() => {
+                    // Ensure popup content is fresh before opening
+                    if (marker.tripData && marker.currentPrev && marker.currentNext) {
+                        updateMarkerPopup(
+                            marker,
+                            marker.tripData.trip,
+                            marker.tripData.routeInfo,
+                            marker.currentPrev,
+                            marker.currentNext,
+                            marker.tripData.schedule,
+                            marker.isRealtime || false,
+                            marker.currentDelay || 0
+                        );
+                    }
                     marker.openPopup();
                     // Update URL hash for deep linking
                     updateHash('train', tripId, { replace: false });
@@ -452,7 +430,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
         // 2. Fast Update (60fps)
         currentTrips.forEach(c => {
-            updateTrainPosition(c.trip, c.routeId, c.routeInfo, secondsSinceMidnight, shapesByRoute, schedule, c.isRealtime, c.delay, c.rtId);
+            updateTrainPosition(c.trip, c.routeId, c.routeInfo, secondsSinceMidnight, shapesByRoute, schedule, c.isRealtime, c.delay, c.rtId, stopsCoords);
         });
 
         if (nowMs - lastFpsUpdate >= 1000) {
@@ -496,7 +474,7 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 /**
  * Updates a single train's position and marker
  */
-function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule, isRealtime, targetDelay, rtId) {
+function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, shapesByRoute, schedule, isRealtime, targetDelay, rtId, stopsCoords) {
     // 1. Find Current Segment
     let marker = activeMarkers[trip.tripId];
     if (!marker) {
@@ -535,9 +513,16 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
     // CASE 1: Before Start (Waiting at First Station)
     if (currentTime < trip.stops[0].time) {
         const startStop = trip.stops[0];
-        const pos = getStopCoords(schedule, startStop.id);
+        const pos = getStopCoords(schedule, startStop.id, stopsCoords);
         if (pos) {
             marker.setLatLng([pos[0], pos[1]]);
+
+            // Store segment info for popup refresh
+            marker.currentPrev = startStop;
+            marker.currentNext = trip.stops[1];
+            marker.isRealtime = isRealtime;
+            marker.currentDelay = targetDelay;
+
             updateMarkerPopup(marker, trip, routeInfo, startStop, trip.stops[1], schedule, isRealtime, targetDelay);
         }
         return;
@@ -557,11 +542,17 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
         // Likely finished trip or just out of bounds
         const lastStop = trip.stops[trip.stops.length - 1];
         if (currentTime >= lastStop.time) {
-            const pos = getStopCoords(schedule, lastStop.id);
+            const pos = getStopCoords(schedule, lastStop.id, stopsCoords);
             if (pos) marker.setLatLng([pos[0], pos[1]]);
         }
         return;
     }
+
+    // Store current segment for popup refresh
+    marker.currentPrev = prev;
+    marker.currentNext = next;
+    marker.isRealtime = isRealtime;
+    marker.currentDelay = targetDelay;
 
     // 2. Calculate Progress (t) with Simulation of Wait Time (Dwell)
     // Assume stops[i].time is DEPARTURE time.
@@ -584,8 +575,8 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
     }
 
     // 3. Get Coordinates (Cached Geometry or LERP)
-    const posA = getStopCoords(schedule, prev.id);
-    const posB = getStopCoords(schedule, next.id);
+    const posA = getStopCoords(schedule, prev.id, stopsCoords);
+    const posB = getStopCoords(schedule, next.id, stopsCoords);
     if (!posA || !posB) return;
 
     let lat, lon;
@@ -597,7 +588,38 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
     if (marker.segmentId !== segmentId) {
         // New segment, compute shape
         marker.segmentId = segmentId;
-        marker.cachedPath = findPathSegment(posA, posB, shapesByRoute[routeId]);
+
+        // Try to find shapes for this route, including common variations
+        let shapes = shapesByRoute[routeId];
+
+        if (!shapes || shapes.length === 0) {
+            // Try common variations and extract route from trip ID
+            // E.g., trip "124200_5..S16X002" -> try route "5"
+            const tripRouteMatch = trip.tripId.match(/_([A-Z0-9]+)\.\./);
+            const tripRoute = tripRouteMatch ? tripRouteMatch[1] : null;
+
+            const variations = [
+                routeId,
+                `${routeId}_`,
+                `${routeId}X`,
+                routeId.replace('_', ''),
+                routeId.split('_')[0],
+                tripRoute // Route extracted from trip ID
+            ].filter(Boolean);
+
+            for (const variant of variations) {
+                if (shapesByRoute[variant] && shapesByRoute[variant].length > 0) {
+                    shapes = shapesByRoute[variant];
+                    break;
+                }
+            }
+
+            if (!shapes || shapes.length === 0) {
+                console.warn(`[Animation] No shapes for route ${routeId}, segment ${prev.id} -> ${next.id}`);
+            }
+        }
+
+        marker.cachedPath = findPathSegment(posA, posB, shapes, routeId, trip.tripId, prev.id, next.id);
         marker.cachedLength = marker.cachedPath ? turf.length(marker.cachedPath) : 0;
 
         // Update popup static info only when segment changes
@@ -610,9 +632,10 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
         const pt = turf.along(marker.cachedPath, dist);
         [lon, lat] = pt.geometry.coordinates;
     } else {
-        // Linear Interpolation (Fallback)
-        lat = posA[0] + (posB[0] - posA[0]) * t;
-        lon = posA[1] + (posB[1] - posA[1]) * t;
+        // No valid path - stay at previous station instead of LERP across map
+        // This prevents trains from "floating" across water/wrong areas
+        lat = posA[0];
+        lon = posA[1];
     }
 
     // Move Marker
@@ -622,8 +645,10 @@ function updateTrainPosition(trip, routeId, routeInfo, secondsSinceMidnight, sha
 /**
  * Computes the sliced path between two stops using Turf
  */
-function findPathSegment(posA, posB, availableShapes) {
-    if (!availableShapes || availableShapes.length === 0) return null;
+function findPathSegment(posA, posB, availableShapes, routeId = '?', tripId = '?', fromStop = '?', toStop = '?') {
+    if (!availableShapes || availableShapes.length === 0) {
+        return null;
+    }
 
     try {
         const ptA = turf.point([posA[1], posA[0]]);
@@ -648,24 +673,30 @@ function findPathSegment(posA, posB, availableShapes) {
             }
         }
 
-        if (bestShape) {
-            const sliced = turf.lineSlice(ptA, ptB, bestShape);
-            // Ensure directionality (should move away from A)
-            // measure dist from start of slice to A
-            const sliceStart = turf.point(sliced.geometry.coordinates[0]);
-            const distStartToA = turf.distance(sliceStart, ptA);
-            const distStartToB = turf.distance(sliceStart, ptB);
-
-            if (distStartToA > distStartToB) {
-                // It's backwards
-                sliced.geometry.coordinates.reverse();
-            }
-            return sliced;
+        if (!bestShape) {
+            console.warn(`[findPathSegment] Route ${routeId}, Trip ${tripId}: No shape within 1km for ${fromStop} -> ${toStop}. Min dist: ${minDist.toFixed(2)}km`);
+            return null;
         }
+
+        // Snap points and slice
+        const snappedA = turf.nearestPointOnLine(bestShape, ptA);
+        const snappedB = turf.nearestPointOnLine(bestShape, ptB);
+        const sliced = turf.lineSlice(snappedA, snappedB, bestShape);
+
+        // measure dist from start of slice to A
+        const sliceStart = turf.point(sliced.geometry.coordinates[0]);
+        const distStartToA = turf.distance(sliceStart, ptA);
+        const distStartToB = turf.distance(sliceStart, ptB);
+
+        if (distStartToA > distStartToB) {
+            // It's backwards
+            sliced.geometry.coordinates.reverse();
+        }
+        return sliced;
     } catch (e) {
-        // console.warn("Path finding error", e);
+        console.warn('[findPathSegment] Error:', e);
+        return null;
     }
-    return null;
 }
 
 // ------ Helpers ------
@@ -686,62 +717,62 @@ async function indexShapesByRoute(shapes) {
     return idx;
 }
 
-const STATION_ALIASES = {
-    'R60': '142', // South Ferry Loop
-    'R65': '142', // South Ferry Loop
-    '140': '142',
-    'H19': 'H04', // Broad Channel (Fallback for RT ID)
-    'F17': 'B06'  // Roosevelt Island (Fallback for RT ID)
-};
+// Local STATION_ALIASES removed (imported from utils.js)
 
-const MANUAL_COORDS = {
-    'G25': [40.7025, -73.8168], // Jamaica-Van Wyck
-};
+// Local STATION_ALIASES removed (imported from utils.js)
 
-function getStopCoords(schedule, stopId) {
+const MANUAL_COORDS = {}; // Deprecated in favor of stopsCoords
+
+function getStopCoords(schedule, stopId, stopsCoords) {
     if (!stopId) return null;
 
-    // 1. Direct Lookup
+    // 0. Priority: Comprehensive GTFS Stops Map (stopsCoords)
+    if (stopsCoords && stopsCoords[stopId]) {
+        return stopsCoords[stopId];
+    }
+
+    // 1. Direct Lookup in Schedule
     let s = schedule.stops[stopId];
-    if (s) return s;
+    if (s) return [s[0], s[1]];
 
-    // 2. Direct Alias Lookup
+    // 1b. Alias Lookup (Important for ID mismatches like R65 -> G19)
     if (STATION_ALIASES[stopId]) {
-        s = schedule.stops[STATION_ALIASES[stopId]];
-        if (s) return s;
+        const alias = STATION_ALIASES[stopId];
+        // Check coords for alias
+        if (stopsCoords && stopsCoords[alias]) return stopsCoords[alias];
+        s = schedule.stops[alias];
+        if (s) return [s[0], s[1]];
     }
 
-    // 3. Manual Coords Lookup
-    if (MANUAL_COORDS[stopId]) {
-        return MANUAL_COORDS[stopId];
-    }
-
-    // 4. Suffix Stripping (e.g. "R01N" -> "R01")
+    // 2. Suffix Stripping (e.g. "R01N" -> "R01")
     if (stopId.length > 3) {
+        // Try looking up parent in stopsCoords
         const parentId = stopId.slice(0, -1);
-
-        // 4a. Parent Lookup
-        s = schedule.stops[parentId];
-        if (s) return s;
-
-        // 4b. Parent Alias Lookup
-        if (STATION_ALIASES[parentId]) {
-            s = schedule.stops[STATION_ALIASES[parentId]];
-            if (s) return s;
+        if (stopsCoords && stopsCoords[parentId]) {
+            return stopsCoords[parentId];
         }
 
-        // 4c. Parent Manual Lookup
-        if (MANUAL_COORDS[parentId]) {
-            return MANUAL_COORDS[parentId];
+        // Try parent in schedule
+        s = schedule.stops[parentId];
+        if (s) return [s[0], s[1]];
+
+        // Try parent alias
+        if (STATION_ALIASES[parentId]) {
+            const alias = STATION_ALIASES[parentId];
+            if (stopsCoords && stopsCoords[alias]) return stopsCoords[alias];
+            s = schedule.stops[alias];
+            if (s) return [s[0], s[1]];
         }
     }
 
     // DEBUG: Log missing IDs (once per ID to avoid spam)
+    /*
     if (!window._missingIds) window._missingIds = new Set();
     if (!window._missingIds.has(stopId)) {
         console.warn(`[getStopCoords] Missing coords for: '${stopId}'`);
         window._missingIds.add(stopId);
     }
+    */
 
     return null;
 }

@@ -105,3 +105,20 @@ export const normId = (id) => {
     const s = String(id);
     return s.startsWith('0') && s.length > 1 ? s.substring(1) : s;
 };
+
+// Aliases for Station ID Mismatches (Live/Schedule/GTFS)
+export const STATION_ALIASES = {
+    // 2/3 Line Mismatch
+    '230': '229',       // Wall St: GTFS=230, Schedule=229
+    '229': '230',       // Bidirectional mapping often helps
+
+    // R/M Line Mismatches (Live vs GTFS)
+    'R65': 'G19',       // Steinway St
+    'R60': 'G16',       // Northern Blvd
+    'G25': 'G07',       // Jamaica-Van Wyck
+
+    // Other Known Mismatches
+    '140': '142',       // Whitehall St -> South Ferry
+    'H19': 'H04',       // Broad Channel
+    'F17': 'B06'        // Roosevelt Island
+};

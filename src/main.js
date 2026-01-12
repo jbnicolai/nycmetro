@@ -127,8 +127,11 @@ async function runApp() {
         // PHASE 3: Live System Coordination
         if (trainLoader) trainLoader.classList.remove('hidden');
 
-        StatusPanel.log("Syncing Live Data...");
-        const [scheduleRes] = await Promise.all([dataPromises.schedule, dataPromises.realtime]);
+        const [scheduleRes, _, stopsCoordsRes] = await Promise.all([
+            dataPromises.schedule,
+            dataPromises.realtime, // just to ensure it's ready
+            dataPromises.stopsCoords
+        ]);
         window.startupMetrics.liveDataReady = performance.now();
 
         // Re-render stations with schedule and start animation
@@ -137,7 +140,8 @@ async function runApp() {
         revealPane(map, 'stations');
 
         StatusPanel.log("Starting Animation...");
-        await startTrainAnimation(config.shapes, config.routes, scheduleRes, visibilityFilter);
+        // Pass stopsCoords (item 2 from Promise.all)
+        await startTrainAnimation(config.shapes, config.routes, scheduleRes, visibilityFilter, stopsCoordsRes);
         revealPane(map, 'trains');
 
         window.startupMetrics.liveAnimationStart = performance.now();
@@ -158,7 +162,11 @@ function prefetchData() {
         stations: fetch('./data/subway-stations.geojson').then(r => r.json()).catch(e => { throw new Error("Stations Fetch Failed: " + e) }),
         neighborhoods: fetch('./data/nyc-neighborhoods.geojson').then(r => r.json()).catch(e => { throw new Error("Neighborhoods Fetch Failed: " + e) }),
         schedule: fetch('/api/schedule').then(r => r.json()).catch(e => { throw new Error("Schedule Fetch Failed: " + e) }),
-        realtime: initRealtime().catch(e => { throw new Error("Realtime Init Failed: " + e) })
+        realtime: initRealtime().catch(e => { throw new Error("Realtime Init Failed: " + e) }),
+        stopsCoords: fetch('./data/stops_coords.json').then(r => r.json()).catch(e => {
+            console.warn("Stops Coords Fetch Failed, using fallback.");
+            return {};
+        })
     };
 }
 
