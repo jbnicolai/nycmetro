@@ -98,9 +98,21 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 
 ## Roadmap
 
-114: - **Ghost Trains**: Greatly reduced by strict aliasing and data ingestion improvements, but occasional mismatches may occur during rerouting events.
-115: - **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
-116:
+### Visuals & UX
+- [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
+- [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
+- [ ] **Restyle Debug Menu**: Update the status panel (`SYSTEM_STATUS`) to match the glassmorphic aesthetics of the search bar and other UI elements.
+
+### Compliance & Architecture
+- [x] **Progressive Web App (PWA)**: Standalone mode, manifest, and cache-busting implemented.
+- [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
+- [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
+- [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
+
+## Known Issues
+- **Route 3 Live Data Missing**: The MTA's `nyct/gtfs` feed is currently not reporting any trips for Route 3 (Red line), causing it to fall back to the static schedule. This has been confirmed as an upstream data issue.
+- **Ghost Trains**: Greatly reduced by strict aliasing and data ingestion improvements, but occasional mismatches may occur during rerouting events.
+- **Realtime Reload Jitter**: Reloading realtime data affects interpolation smoothness.
 
 ## Development Workflow
 > [!IMPORTANT]
