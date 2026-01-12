@@ -67,9 +67,14 @@ window.flyToStation = (stationId) => {
             targetLatLng = map.unproject(targetPoint, zoom);
         }
 
-        map.flyTo(targetLatLng, 15, { animate: true, duration: 1.2 });
         // Delay popup slightly to allow move start
-        setTimeout(() => marker.openPopup(), 100);
+        setTimeout(() => {
+            if (marker._features) {
+                showStationPopup(marker._features, marker);
+            } else {
+                marker.openPopup();
+            }
+        }, 100);
     }
 };
 
@@ -362,6 +367,7 @@ export async function renderStations(geoJson, layerGroup, schedule, routes) {
             // Index for jumping
             const sId = item.feature.properties.gtfs_stop_id;
             if (sId) {
+                marker._features = bundle.map(b => b.feature); // Store for flyToStation
                 stationMarkers.set(sId, marker);
             }
 
