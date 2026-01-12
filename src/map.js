@@ -34,6 +34,11 @@ export function initMap() {
     highlightPane.style.zIndex = 415;
     highlightPane.classList.add('layer-hidden');
 
+    // Dedicated Renderer for Highlight Pane
+    // This is CRITICAL: Canvas layers share a renderer by default. 
+    // To physically stack them, we need a separate renderer instance on the higher pane.
+    window.highlightRenderer = L.canvas({ pane: 'highlightPane', padding: 0.5, tolerance: 10 });
+
     // Dark Map Style (CartoDB Dark Matter)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -331,9 +336,13 @@ export function highlightRouteTrack(routeId) {
             layers.routes.removeLayer(prevLayer);
 
             if (prevLayer.eachLayer) {
-                prevLayer.eachLayer(l => l.options.pane = 'routesPane');
+                prevLayer.eachLayer(l => {
+                    l.options.pane = 'routesPane';
+                    l.options.renderer = null; // Revert to default
+                });
             } else {
                 prevLayer.options.pane = 'routesPane';
+                prevLayer.options.renderer = null;
             }
 
             layers.routes.addLayer(prevLayer);
@@ -348,14 +357,18 @@ export function highlightRouteTrack(routeId) {
             layers.routes.removeLayer(targetLayer);
 
             if (targetLayer.eachLayer) {
-                targetLayer.eachLayer(l => l.options.pane = 'highlightPane');
+                targetLayer.eachLayer(l => {
+                    l.options.pane = 'highlightPane';
+                    l.options.renderer = window.highlightRenderer; // Force new renderer
+                });
             } else {
                 targetLayer.options.pane = 'highlightPane';
+                targetLayer.options.renderer = window.highlightRenderer;
             }
 
             layers.routes.addLayer(targetLayer);
         }
         currentlyHighlightedId = routeId;
-        console.log(`[Map] Highlighted route ${routeId} (Pane Strategy).`);
+        console.log(`[Map] Highlighted route ${routeId} (Pane+Renderer Strategy).`);
     }
 }
