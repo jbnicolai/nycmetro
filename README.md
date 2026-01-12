@@ -100,16 +100,12 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 
 ### Visuals & UX
 - [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
-- [x] **Mobile Zoom**: Fix map zooming to avoid scaling the UI.
 - [ ] **Track Z-Index on Selection**: Render the selected train's track on top of other tracks (e.g., blue E train track on top of orange F track).
 - [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
-- [x] **Browser History**: Implement back/undo navigation for station and train selections.
-- [x] **Deep Linking**: Support deep linking to trains/stations via URL hash.
 
 ### Compliance & Architecture
 - [ ] **Progressive Web App (PWA)**: Implement PWA features for offline availability of the app and subway schedule data.
 - [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
-- [x] **Smart Matching**: Improved robustness via strict aliasing for known ID mismatches (Wall St, Steinway St, etc).
 - [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
 - [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
 
