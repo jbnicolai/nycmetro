@@ -8,6 +8,7 @@ import { fetchCitibikeStations, filterCitibikeStations } from './citibike.js';
 import { initRealtime } from './realtime.js';
 import { StatusPanel } from './status-panel.js';
 import { initAlerts } from './alerts.js';
+import { getInitialState, onHashChange } from './history.js';
 
 // Add Citibike Layer to State
 layers.citibike = L.layerGroup();
@@ -189,4 +190,54 @@ function revealPane(map, paneName) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', runApp);
+/**
+ * Handle initial state from URL hash
+ * Called after app initialization to navigate to deep-linked content
+ */
+function handleInitialState() {
+    const state = getInitialState();
+
+    if (!state.type || !state.id) {
+        return; // No deep link
+    }
+
+    console.log('[DeepLink] Initial state:', state);
+
+    // Navigate to the target
+    if (state.type === 'station' && window.flyToStation) {
+        window.flyToStation(state.id);
+    } else if (state.type === 'train' && window.flyToTrain) {
+        window.flyToTrain(state.id);
+    }
+}
+
+/**
+ * Handle hash changes (browser back/forward)
+ */
+onHashChange((newState, oldState) => {
+    console.log('[DeepLink] Hash changed:', oldState, '->', newState);
+
+    // Handle navigation
+    if (newState.type === 'station' && newState.id) {
+        if (window.flyToStation) {
+            window.flyToStation(newState.id);
+        }
+    } else if (newState.type === 'train' && newState.id) {
+        if (window.flyToTrain) {
+            window.flyToTrain(newState.id);
+        }
+    } else {
+        // Clear state - close any open popups
+        const map = layers.trains._map || layers.stations._map;
+        if (map) {
+            map.closePopup();
+        }
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    runApp().then(() => {
+        // Handle initial deep link after app is ready
+        setTimeout(handleInitialState, 1000);
+    });
+});
