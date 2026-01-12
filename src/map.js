@@ -316,7 +316,18 @@ export function highlightRouteTrack(routeId) {
     const targetLayer = layers.routeLayers[routeId];
 
     if (targetLayer) {
-        // LayerGroup doesn't have bringToFront, but its children (Polylines) do.
+        // Strategy: Push EVERY other route to the back, then bring target to front.
+        Object.entries(layers.routeLayers).forEach(([id, layerGroup]) => {
+            if (id === routeId) return; // Skip target for now
+
+            if (layerGroup.eachLayer) {
+                layerGroup.eachLayer(layer => {
+                    if (layer.bringToBack) layer.bringToBack();
+                });
+            }
+        });
+
+        // Now bring target to front
         if (targetLayer.eachLayer) {
             targetLayer.eachLayer(layer => {
                 if (layer.bringToFront) layer.bringToFront();
