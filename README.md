@@ -104,7 +104,12 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 - [ ] **Restyle Debug Menu**: Update the status panel (`SYSTEM_STATUS`) to match the glassmorphic aesthetics of the search bar and other UI elements.
 
 ### Compliance & Architecture
-- [x] **Progressive Web App (PWA)**: Standalone mode, manifest, and cache-busting implemented.
+- [x] **Progressive Web App (PWA)**: Manifest and standalone mode implemented. Cache-busting and version polling active.
+- [ ] **Service Worker for Offline Support**: Implement a Service Worker to cache static schedule data (`subway_schedule.json`, GeoJSON files) for offline availability. Strategy:
+    - Cache-first for static assets (HTML, CSS, JS, schedule data)
+    - Network-first with cache fallback for real-time feeds
+    - Cache versioning tied to app version for smart invalidation
+    - Handle offline/online transitions gracefully
 - [ ] **Smart Filtering**: Cache Citi Bike data (~30s TTL) to avoid reloading on filter changes.
 - [ ] **Data Optimization**: Evaluate migrating JSON schedule data to a binary format (e.g., FlatBuffers) for faster parsing.
 - [ ] **Modularization**: Continue breaking down `stations.js` and `animation.js` into smaller, domain-specific modules.
