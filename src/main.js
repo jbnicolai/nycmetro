@@ -20,6 +20,9 @@ window.stationSearch = new StationSearch('station-search-container');
 async function runApp() {
     console.log("Initializing App (Modular)...");
 
+    // Set App Version
+    StatusPanel.update('version', '1.1.0');
+
     const map = initMap();
     layers.citibike.addTo(map);
 

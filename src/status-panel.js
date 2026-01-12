@@ -17,6 +17,10 @@ export const StatusPanel = {
                     <span class="status-value" id="status-time">--:--:--</span>
                 </div>
                 <div class="status-row">
+                    <span class="status-key">VER:</span>
+                    <span class="status-value" id="status-version">--</span>
+                </div>
+                <div class="status-row">
                     <span class="status-key">FPS:</span>
                     <span class="status-value" id="status-fps">60</span>
                 </div>

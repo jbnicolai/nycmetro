@@ -240,8 +240,8 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
         if not has_cache_control:
             if ENV == 'production':
                 # Cache static assets for 1 hour, but require revalidation for API
-                if self.path.startswith('/api/'):
-                    self.send_header('Cache-Control', 'no-cache')
+                if self.path.startswith('/api/') or self.path == '/' or self.path == '/index.html':
+                    self.send_header('Cache-Control', 'no-cache, must-revalidate')
                 else:
                     self.send_header('Cache-Control', 'public, max-age=3600')
             else:
