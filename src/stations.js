@@ -2,6 +2,7 @@ import { parseProperties, formatTime, getDelayInSeconds, unixToSecondsSinceMidni
 import { rtState, getMatchingTrip, getScheduledIdForRt } from './realtime.js';
 import { getActiveAlerts } from './alerts.js';
 import { renderRouteBadge, renderStatusBadge } from './ui.js';
+import { updateHash } from './history.js';
 
 // ... (imports)
 
@@ -522,5 +523,12 @@ function showStationPopup(features, layer) {
     }
 
     content += `</div>`; // Close popup
+
+    // Update URL hash for deep linking
+    const stopId = Array.from(stopIds)[0]; // Use first stop ID
+    if (stopId) {
+        updateHash('station', stopId, { replace: false });
+    }
+
     layer.bindPopup(content, { maxWidth: 420, minWidth: 340 }).openPopup();
 }
