@@ -814,6 +814,9 @@ function createTrainMarker(trip, routeInfo, schedule) {
         zIndexOffset: 1000 // Ensure trains are above stations
     }).addTo(layers.trains);
 
+    // Attach routeId for Z-index highlighting
+    marker.routeId = routeId;
+
     // Train Hover Label with Badge
     const tooltipHtml = `
         <div class="train-label-content">

@@ -32,7 +32,6 @@ export function initMap() {
     // Dedicated Pane for Highlighted Route (Above normal routes, below stations)
     const highlightPane = map.createPane('highlightPane');
     highlightPane.style.zIndex = 415;
-    highlightPane.classList.add('layer-hidden');
 
     // Dedicated Renderer for Highlight Pane
     // This is CRITICAL: Canvas layers share a renderer by default. 
@@ -325,8 +324,6 @@ let highlightOverlayLayer = L.layerGroup();
  * @param {string} routeId - The route ID (e.g. "E", "2")
  */
 export function highlightRouteTrack(routeId) {
-    console.log(`[Map] highlightRouteTrack called for: ${routeId}`);
-
     if (!map) return;
 
     // 1. Clear previous highlight
@@ -363,8 +360,5 @@ export function highlightRouteTrack(routeId) {
     // 3. Add overlay to map
     if (highlightOverlayLayer.getLayers().length > 0) {
         highlightOverlayLayer.addTo(map);
-        console.log(`[Map] Added ${highlightOverlayLayer.getLayers().length} segments to highlight overlay properly.`);
-    } else {
-        console.warn("[Map] Highlight overlay is empty.");
     }
 }
