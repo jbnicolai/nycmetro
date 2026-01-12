@@ -79,7 +79,17 @@ export class StationSearch {
                     <span class="search-name">${station.name}</span>
                     <span class="search-routes-inline">${badgesHtml}</span>
                 `;
-                div.onclick = () => this.selectResult(station);
+
+                // Handle both click and touchend for robust mobile support
+                const select = (e) => {
+                    e.preventDefault(); // Prevent ghost clicks
+                    e.stopPropagation();
+                    this.selectResult(station);
+                };
+
+                div.addEventListener('click', select);
+                div.addEventListener('touchend', select);
+
                 this.resultsContainer.appendChild(div);
             });
         }
