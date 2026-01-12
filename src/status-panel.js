@@ -69,33 +69,12 @@ export const StatusPanel = {
         // Initial State: Hidden
         panel.style.display = 'none';
 
-        // 2. Add Leaflet Control for Toggle
-        if (map) {
-            const DebugControl = L.Control.extend({
-                options: { position: 'bottomleft' },
-                onAdd: function () {
-                    const btn = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
-                    const link = L.DomUtil.create('a', 'leaflet-control-debug', btn);
-                    link.href = '#';
-                    link.title = 'Toggle Debug Panel';
-                    link.role = 'button';
-                    link.innerHTML = '>'; // Integrated style
-                    link.style.fontWeight = 'bold';
-                    link.style.fontSize = '14px';
-                    link.style.color = '#000'; // Match standard leaflet controls logic (user can customize)
-
-                    L.DomEvent.on(link, 'click', (e) => {
-                        L.DomEvent.stopPropagation(e);
-                        L.DomEvent.preventDefault(e);
-                        const isVisible = panel.style.display === 'block';
-                        panel.style.display = isVisible ? 'none' : 'block';
-                    });
-
-                    return btn;
-                }
-            });
-            map.addControl(new DebugControl());
-        }
+        // 2. Control managed by main map (NavigationControl)
+        // Global toggle helper
+        window.toggleStatusPanel = () => {
+            const isVisible = panel.style.display === 'block';
+            panel.style.display = isVisible ? 'none' : 'block';
+        };
 
         // Close Button Logic
         const closeBtn = document.getElementById('close-status');

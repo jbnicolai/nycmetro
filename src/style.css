@@ -1773,7 +1773,6 @@ to {
     transform: translate(-50%, 0);
     opacity: 1;
 }
-}
 
 /* Debug Control Icon */
 .leaflet-control-debug {
@@ -1785,11 +1784,91 @@ to {
     /* Standard Leaflet dimension */
     height: 30px;
     text-decoration: none !important;
+    background-color: #fff;
+    /* Ensure white background so it's visible on dark map */
+    color: #000;
+    font-weight: bold;
+    font-size: 14px;
+    border-radius: 2px;
+    /* Match standard leaflet radius */
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    z-index: 1000;
+    /* Ensure visibility */
 }
 
-/* Status Panel Position Update to sit next to/above controls */
+/* Status Panel Position Update */
 .status-panel {
-    bottom: 50px !important;
-    /* Above controls */
+    bottom: 90px !important;
+    /* Above controls (30+30+30 approx + margins) */
     left: 10px !important;
+}
+
+/* Fix Overlay Icon Spacing (FAB) - Reduced */
+/* Fix Overlay Icon Spacing (FAB) - Tighten to border */
+.legend-fab {
+    margin-right: -5px !important;
+    /* Force it right to edge */
+    margin-bottom: 25px;
+}
+
+/* Adjust Left Controls Spacing - Reduced */
+.leaflet-left .leaflet-control {
+    margin-left: 10px;
+}
+
+.leaflet-bottom .leaflet-control {
+    margin-bottom: 10px;
+}
+
+/* Fix Overlay Icon Spacing (FAB) */
+.legend-fab {
+    margin-right: 15px;
+    /* Add more space from right edge */
+    margin-bottom: 15px;
+    /* Add more space from bottom edge */
+}
+
+/* Adjust Left Controls Spacing if needed */
+.leaflet-left .leaflet-control {
+    margin-left: 15px;
+    /* More space from left edge */
+}
+
+.leaflet-bottom .leaflet-control {
+    margin-bottom: 15px;
+}
+
+/* Fix overlap in Train Popup specifically */
+.train-realtime-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border: 1px solid;
+    margin-right: 35px !important;
+    /* Increased to clear the Close button */
+    white-space: nowrap;
+}
+
+.blink-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
 }

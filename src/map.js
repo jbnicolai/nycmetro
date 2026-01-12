@@ -45,61 +45,64 @@ export function initMap() {
         maxZoom: 20
     }).addTo(map);
 
-    L.control.zoom({ position: 'bottomleft' }).addTo(map);
-
-    // Locate Control
-    const LocateControl = L.Control.extend({
+    // Unified Navigation Control (Zoom In/Out, Locate, Debug)
+    const NavigationControl = L.Control.extend({
         options: {
             position: 'bottomleft'
         },
         onAdd: function (map) {
-            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
-            const button = L.DomUtil.create('a', 'leaflet-control-locate', container);
-            button.id = "btn-locate";
-            button.href = "#";
-            button.title = "Locate Me";
-            button.role = "button";
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
 
-            // Crosshair Icon (SVG)
+            // Helper to create buttons
+            const createBtn = (cls, title, html, onClick) => {
+                const link = L.DomUtil.create('a', cls, container);
+                link.href = '#';
+                link.title = title;
+                link.role = 'button';
+                link.innerHTML = html;
+                L.DomEvent.on(link, 'click', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    L.DomEvent.preventDefault(e);
+                    onClick(e);
+                });
+                return link;
+            };
+
+            // 1. Zoom In
+            createBtn('leaflet-control-zoom-in', 'Zoom in', '+', () => map.zoomIn());
+
+            // 2. Zoom Out
+            createBtn('leaflet-control-zoom-out', 'Zoom out', '&#x2212;', () => map.zoomOut());
+
+            // 3. Locate
             const arrowIcon = `
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="control-icon" stroke="currentColor" stroke-width="2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="8" x2="12" y2="16"></line>
                     <line x1="8" y1="12" x2="16" y2="12"></line>
                 </svg>
             `;
-            button.innerHTML = arrowIcon;
-
-            let userMarker = null;
-            let userPulse = null;
-
-            const onLocate = () => {
-                button.innerHTML = `
-                    <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            const locateBtn = createBtn('leaflet-control-locate', 'Locate Me', arrowIcon, () => {
+                locateBtn.innerHTML = `
+                    <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
                     </svg>
                 `;
                 map.locate({ setView: false, enableHighAccuracy: true });
-            };
-
-            // Expose globally for main.js
-            window.triggerLocate = onLocate;
-
-            L.DomEvent.on(button, 'click', function (e) {
-                L.DomEvent.stopPropagation(e);
-                L.DomEvent.preventDefault(e);
-                onLocate();
             });
 
+            // 4. Debug Toggle
+            createBtn('leaflet-control-debug', 'Toggle Debug', '>', () => {
+                if (window.toggleStatusPanel) window.toggleStatusPanel();
+            });
+
+            // Location Logic
+            let userMarker = null;
+            let userPulse = null;
+
             map.on('locationfound', (e) => {
-                // Smooth Fly
-                map.flyTo(e.latlng, 15, {
-                    animate: true,
-                    duration: 1.5, // Faster zoom
-                    easeLinearity: 0.1
-                });
-                // Reset Icon
-                button.innerHTML = arrowIcon;
+                map.flyTo(e.latlng, 15, { animate: true, duration: 1.5 });
+                locateBtn.innerHTML = arrowIcon;
 
                 // Show Blue Dot
                 if (userMarker) {
@@ -127,15 +130,20 @@ export function initMap() {
             });
 
             map.on('locationerror', (e) => {
-                console.warn("Location access denied or failed:", e.message);
-                button.innerHTML = arrowIcon; // Just reset
+                console.warn("Location error:", e.message);
+                locateBtn.innerHTML = arrowIcon;
             });
+
+            // Global trigger
+            window.triggerLocate = () => {
+                locateBtn.click();
+            };
 
             return container;
         }
     });
 
-    map.addControl(new LocateControl());
+    map.addControl(new NavigationControl());
 
     // Add Layers
     layers.neighborhoods.addTo(map);
@@ -377,4 +385,24 @@ export function highlightRouteTrack(routeId) {
     if (highlightOverlayLayer.getLayers().length > 0) {
         highlightOverlayLayer.addTo(map);
     }
+}
+
+/**
+ * Calculates a center point that puts the target LatLng in the bottom 25% of the screen on mobile.
+ * Returns the adjusted center LatLng.
+ */
+export function getMobileOffsetCenter(map, latlng) {
+    if (!map || !latlng) return latlng;
+
+    const isMobile = window.innerWidth <= 600;
+    if (!isMobile) return latlng;
+
+    const zoom = map.getZoom();
+    const point = map.project(latlng, zoom);
+    const offsetY = map.getSize().y * 0.25; // Shift map center UP so point is DOWN
+    // We want the point to be at (center.x, center.y + offsetY)
+    // So the map center should be at (point.x, point.y - offsetY)
+    const targetPoint = point.subtract([0, offsetY]);
+
+    return map.unproject(targetPoint, zoom);
 }
