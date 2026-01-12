@@ -11,7 +11,7 @@ export const layers = {
 export const visibilityFilter = new Set(); // Renamed from hiddenRoutes to force cache update
 
 export function initMap() {
-    const map = L.map('map', {
+    map = L.map('map', {
         center: [40.730610, -73.935242],
         zoom: 12, // Starting zoom
         minZoom: 11,
