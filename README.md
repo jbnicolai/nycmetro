@@ -100,7 +100,7 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 
 ### Visuals & UX
 - [ ] **Realistic Train Sizing**: Optionally show trains in a more realistic size (real length based on number of wagons, either real or estimated).
-- [ ] **Track Z-Index on Selection**: Render the selected train's track on top of other tracks (e.g., blue E train track on top of orange F track).
+- [x] **Track Z-Index on Selection**: Render the selected train's track on top of other tracks (e.g., blue E train track on top of orange F track).
 - [ ] **Citi Bike Timelapse**: Create a 24h/7d timelapse visualization of station availability.
 
 ### Compliance & Architecture

@@ -1,4 +1,4 @@
-import { layers } from './map.js';
+import { layers, highlightRouteTrack } from './map.js';
 import { StatusPanel } from './status-panel.js';
 import { formatTime, getDelayInSeconds, getContrastColor, unixToSecondsSinceMidnight, yieldToMain, normId, STATION_ALIASES } from './utils.js';
 import { rtState, getMatchingTrip, registerMatch } from './realtime.js';
@@ -178,6 +178,11 @@ export async function startTrainAnimation(shapes, routes, schedule, visibilitySe
 
             const map = marker._map;
             if (map) {
+                // Highlight the Route Track
+                if (marker.routeId) {
+                    highlightRouteTrack(marker.routeId);
+                }
+
                 map.flyTo(ll, 16, { animate: true, duration: 1.0 }); // Zoom in closer
                 // Slight delay to allow flyTo to start
                 setTimeout(() => {

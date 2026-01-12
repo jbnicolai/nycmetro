@@ -302,3 +302,27 @@ function validateCoords(coords) {
     // Recursive case: Array of arrays
     return coords.every(validateCoords);
 }
+
+/**
+ * Brings the specified route's track to the front.
+ * @param {string} routeId - The route ID (e.g. "E", "2")
+ */
+export function highlightRouteTrack(routeId) {
+    if (!routeId || !layers.routeLayers) return;
+
+    // Reset logic: We generally want the selected one on top.
+    // We don't necessarily need to push EVERYTHING else back, 
+    // just ensure the target one is last in the visual stack.
+    const targetLayer = layers.routeLayers[routeId];
+
+    if (targetLayer) {
+        // LayerGroup doesn't have bringToFront, but its children (Polylines) do.
+        if (targetLayer.eachLayer) {
+            targetLayer.eachLayer(layer => {
+                if (layer.bringToFront) layer.bringToFront();
+            });
+        } else if (targetLayer.bringToFront) {
+            targetLayer.bringToFront();
+        }
+    }
+}
