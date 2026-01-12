@@ -69,7 +69,7 @@ window.flyToStation = (stationId) => {
 
         map.flyTo(targetLatLng, 15, { animate: true, duration: 1.2 });
         // Delay popup slightly to allow move start
-        setTimeout(() => marker.fire('click'), 100);
+        setTimeout(() => marker.openPopup(), 100);
     }
 };
 
