@@ -21,7 +21,26 @@ async function runApp() {
     console.log("Initializing App (Modular)...");
 
     // Set App Version
-    StatusPanel.update('version', '1.1.0');
+    const CURRENT_VERSION = '1.1.0';
+    StatusPanel.update('version', CURRENT_VERSION);
+
+    // Version Polling (Every 5 minutes or on visibility change)
+    const checkVersion = async () => {
+        try {
+            const res = await fetch('/api/version');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.version && data.version !== CURRENT_VERSION) {
+                    StatusPanel.showUpdateBanner(data.version);
+                }
+            }
+        } catch (e) { console.warn("Version check failed", e); }
+    };
+
+    setInterval(checkVersion, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkVersion();
+    });
 
     const map = initMap();
     layers.citibike.addTo(map);

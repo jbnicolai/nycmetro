@@ -61,10 +61,15 @@ body {
         /* Prevent IOS zoom */
         padding-left: 44px;
         /* Space for icon */
-        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="white" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>');
         background-repeat: no-repeat;
         background-position: 12px center;
         background-size: 24px;
+    }
+
+    /* Push Leaflet Controls down */
+    .leaflet-top.leaflet-left {
+        top: 70px;
+        /* Clear the floating search bar */
     }
 }
 
@@ -1724,4 +1729,54 @@ body.rt-error .leaflet-control-container .leaflet-top {
     opacity: 0;
     pointer-events: none;
     transform: scale(0.8);
+}
+
+/* Update Banner */
+.update-banner {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(16, 185, 129, 0.95);
+    /* Green-500 */
+    color: white;
+    padding: 12px 24px;
+    border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    backdrop-filter: blur(4px);
+    animation: slideUp 0.3s ease-out;
+}
+
+.update-banner button {
+    background: white;
+    color: #059669;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: transform 0.1s;
+}
+
+.update-banner button:active {
+    transform: scale(0.95);
+}
+
+@keyframes slideUp {
+    from {
+        transform: translate(-50%, 20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
 }

@@ -556,5 +556,9 @@ function showStationPopup(features, layer) {
         updateHash('station', stopId, { replace: false });
     }
 
-    layer.bindPopup(content, { maxWidth: 420, minWidth: 340 }).openPopup();
+    layer.bindPopup(content, {
+        maxWidth: 420,
+        minWidth: 340,
+        autoPanPaddingTopLeft: L.point(0, 80) // Push map down so header is visible under search bar
+    }).openPopup();
 }

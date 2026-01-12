@@ -399,6 +399,13 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content)
             
+        elif parsed_path == '/api/version':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(b'{"version": "1.1.0"}')
+
         elif self.path == '/api/alerts':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')

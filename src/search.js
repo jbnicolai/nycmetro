@@ -100,6 +100,7 @@ export class StationSearch {
     selectResult(station) {
         this.input.value = station.name;
         this.hideResults();
+        this.input.blur(); // Dismiss keyboard on mobile
 
         // Call global flyToStation
         if (window.flyToStation && station.id) {

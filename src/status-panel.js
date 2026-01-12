@@ -115,5 +115,20 @@ export const StatusPanel = {
         if (log.children.length > 50) {
             log.removeChild(log.firstChild);
         }
+    },
+
+    showUpdateBanner(newVersion) {
+        let banner = document.getElementById('update-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'update-banner';
+            banner.className = 'update-banner';
+            banner.innerHTML = `
+                <span>Update Available (${newVersion})</span>
+                <button onclick="window.location.reload()">Refresh</button>
+            `;
+            document.body.appendChild(banner);
+        }
+        banner.style.display = 'flex';
     }
 };
