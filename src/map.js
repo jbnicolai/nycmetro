@@ -317,58 +317,54 @@ function validateCoords(coords) {
  * Brings the specified route's track to the front.
  * @param {string} routeId - The route ID (e.g. "E", "2")
  */
-let currentlyHighlightedId = null;
+// Store the temporary overlay layer
+let highlightOverlayLayer = L.layerGroup();
 
 /**
- * Brings the specified route's track to the front by moving it to the highlightPane.
+ * Brings the specified route's track to the front by creating a clone in the highlightPane.
  * @param {string} routeId - The route ID (e.g. "E", "2")
  */
 export function highlightRouteTrack(routeId) {
-    if (!routeId || !layers.routeLayers || !layers.routes) return;
-    if (routeId === currentlyHighlightedId) return; // Already highlighted
+    console.log(`[Map] highlightRouteTrack called for: ${routeId}`);
 
-    // 1. Demote previous highlight (if any)
-    if (currentlyHighlightedId && layers.routeLayers[currentlyHighlightedId]) {
-        const prevLayer = layers.routeLayers[currentlyHighlightedId];
+    if (!map) return;
 
-        // Remove, reset pane, re-add
-        if (layers.routes.hasLayer(prevLayer)) {
-            layers.routes.removeLayer(prevLayer);
-
-            if (prevLayer.eachLayer) {
-                prevLayer.eachLayer(l => {
-                    l.options.pane = 'routesPane';
-                    l.options.renderer = null; // Revert to default
-                });
-            } else {
-                prevLayer.options.pane = 'routesPane';
-                prevLayer.options.renderer = null;
-            }
-
-            layers.routes.addLayer(prevLayer);
-        }
+    // 1. Clear previous highlight
+    if (map.hasLayer(highlightOverlayLayer)) {
+        map.removeLayer(highlightOverlayLayer);
+        highlightOverlayLayer.clearLayers();
     }
 
-    // 2. Promote new highlight
-    const targetLayer = layers.routeLayers[routeId];
-    if (targetLayer) {
-        // Remove, set pane, re-add
-        if (layers.routes.hasLayer(targetLayer)) {
-            layers.routes.removeLayer(targetLayer);
+    if (!routeId) return;
 
-            if (targetLayer.eachLayer) {
-                targetLayer.eachLayer(l => {
-                    l.options.pane = 'highlightPane';
-                    l.options.renderer = window.highlightRenderer; // Force new renderer
-                });
-            } else {
-                targetLayer.options.pane = 'highlightPane';
-                targetLayer.options.renderer = window.highlightRenderer;
-            }
+    const sourceLayerGroup = layers.routeLayers[routeId];
+    if (!sourceLayerGroup) {
+        console.warn(`[Map] No source layer found for route: ${routeId}`);
+        return;
+    }
 
-            layers.routes.addLayer(targetLayer);
+    // 2. Clone features into the dedicated pane
+    sourceLayerGroup.eachLayer(layer => {
+        if (layer instanceof L.Polyline) {
+            // Clone options but force pane and renderer
+            const options = {
+                ...layer.options,
+                pane: 'highlightPane',
+                renderer: window.highlightRenderer,
+                interactive: false // Clone shouldn't steal clicks? Or maybe it should?
+            };
+
+            const latlngs = layer.getLatLngs();
+            const clone = L.polyline(latlngs, options);
+            highlightOverlayLayer.addLayer(clone);
         }
-        currentlyHighlightedId = routeId;
-        console.log(`[Map] Highlighted route ${routeId} (Pane+Renderer Strategy).`);
+    });
+
+    // 3. Add overlay to map
+    if (highlightOverlayLayer.getLayers().length > 0) {
+        highlightOverlayLayer.addTo(map);
+        console.log(`[Map] Added ${highlightOverlayLayer.getLayers().length} segments to highlight overlay properly.`);
+    } else {
+        console.warn("[Map] Highlight overlay is empty.");
     }
 }
