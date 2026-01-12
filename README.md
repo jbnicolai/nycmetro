@@ -120,6 +120,23 @@ The static schedule data (`data/subway_schedule.json`) is generated from the raw
 > **Verify before Commit**: Do not commit changes to the main branch before explicitly confirming with the user that the functionality works as expected.
 > **DO NOT PUSH**: Do not push changes to the remote repository without explicit user permission.
 
+## Deployment
+
+### Railway Integration
+The application is hosted on [Railway](https://railway.app/).
+- **Live URL**: [https://nycmetro-production.up.railway.app/](https://nycmetro-production.up.railway.app/)
+- **Auto-Deploys**: The `prod` branch is automatically deployed to Railway.
+
+### Publishing Updates
+To deploy the latest changes to production:
+
+1.  **Ensure `main` is stable** and changes have been verified.
+2.  **Push `main` to `prod`**:
+    ```bash
+    git push origin main:prod
+    ```
+    *(This commands pushes your local `main` branch to the remote `prod` branch, triggering a deployment.)*
+
 ## Agent Learnings
 1. **Centralized Logic**: Moving shared logic (like `getMatchingTrip` in `realtime.js`) early prevents "Ghost Train" bugs where different parts of the app behave inconsistently.
 2. **Robust UI Config**: When adding dynamic text (like "Approaching"), always check for text wrapping and adjust container widths/flex properties immediately.
